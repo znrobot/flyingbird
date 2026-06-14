@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>超级小鸟 - 四大角色对战</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+  }
+  #gameContainer { position: relative; image-rendering: pixelated; }
+  canvas {
+    display: block;
+    border: 4px solid #555;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  #ui {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    color: white; font-size: 18px; font-weight: bold;
+    text-shadow: 2px 2px 0 #000; pointer-events: none;
+    display: flex; gap: 40px; z-index: 10;
+  }
+  .score-box {
+    background: rgba(0,0,0,0.7); padding: 6px 16px;
+    border-radius: 8px; border: 2px solid #888;
+  }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="game"></canvas>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const W = 800, H = 600;
+canvas.width = W;
+canvas.height = H;
+
+// --- SPRITES ---
+
+function drawBlueBird(x, y, w, h, frame) {
+  const wingUp = frame % 20 < 10;
+  ctx.fillStyle = '#4488ff';
+  ctx.fillRect(x + w*0.3, y + h*0.2, w*0.4, h*0.35);
+  ctx.fillStyle = '#2266dd';
+  ctx.fillRect(x + w*0.6, y + h*0.15, w*0.25, h*0.25);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x + w*0.64, y + h*0.18, w*0.10, h*0.10);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x + w*0.67, y + h*0.21, w*0.05, h*0.05);
+  ctx.fillStyle = '#ffaa00';
+  ctx.fillRect(x + w*0.75, y + h*0.22, w*0.12, h*0.06);
+  ctx.fillStyle = '#3377ee';
+  if (wingUp) ctx.fillRect(x + w*0.42, y + h*0.02, w*0.16, h*0.22);
+  else ctx.fillRect(x + w*0.38, y + h*0.35, w*0.2, h*0.22);
+  ctx.fillStyle = '#2266dd';
+  ctx.fillRect(x + w*0.2, y + h*0.3, w*0.2, h*0.2);
+}
+
+function drawBlueberryBird(x, y, w, h, frame) {
+  const wingUp = frame % 20 < 10;
+  ctx.fillStyle = '#6666cc';
+  ctx.fillRect(x + w*0.3, y + h*0.2, w*0.4, h*0.35);
+  ctx.fillStyle = '#4444aa';
+  ctx.fillRect(x + w*0.6, y + h*0.15, w*0.25, h*0.25);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x + w*0.64, y + h*0.18, w*0.10, h*0.10);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x + w*0.67, y + h*0.21, w*0.05, h*0.05);
+  ctx.fillStyle = '#ffaa00';
+  ctx.fillRect(x + w*0.75, y + h*0.22, w*0.12, h*0.06);
+  ctx.fillStyle = '#5555bb';
+  if (wingUp) ctx.fillRect(x + w*0.42, y + h*0.02, w*0.16, h*0.22);
+  else ctx.fillRect(x + w*0.38, y + h*0.35, w*0.2, h*0.22);
+  ctx.fillStyle = '#4444aa';
+  ctx.fillRect(x + w*0.2, y + h*0.3, w*0.2, h*0.2);
+}
+
+function drawGreenBird(x, y, w, h, frame) {
+  const wingUp = frame % 20 < 10;
+  ctx.fillStyle = '#44cc44';
+  ctx.fillRect(x + w*0.3, y + h*0.2, w*0.4, h*0.35);
+  ctx.fillStyle = '#228822';
+  ctx.fillRect(x + w*0.6, y + h*0.15, w*0.25, h*0.25);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x + w*0.64, y + h*0.18, w*0.10, h*0.10);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x + w*0.67, y + h*0.21, w*0.05, h*0.05);
+  ctx.fillStyle = '#ffaa00';
+  ctx.fillRect(x + w*0.75, y + h*0.22, w*0.12, h*0.06);
+  ctx.fillStyle = '#33aa33';
+  if (wingUp) ctx.fillRect(x + w*0.42, y + h*0.02, w*0.16, h*0.22);
+  else ctx.fillRect(x + w*0.38, y + h*0.35, w*0.2, h*0.22);
+  ctx.fillStyle = '#226622';
+  ctx.fillRect(x + w*0.2, y + h*0.3, w*0.2, h*0.2);
+}
+
+function drawMangoBird(x, y, w, h, frame) {
+  const wingUp = frame % 20 < 10;
+  ctx.fillStyle = '#ffbb33';
+  ctx.fillRect(x + w*0.3, y + h*0.2, w*0.4, h*0.35);
+  ctx.fillStyle = '#ff9911';
+  ctx.fillRect(x + w*0.6, y + h*0.15, w*0.25, h*0.25);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x + w*0.64, y + h*0.18, w*0.10, h*0.10);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x + w*0.67, y + h*0.21, w*0.05, h*0.05);
+  ctx.fillStyle = '#ff6600';
+  ctx.fillRect(x + w*0.75, y + h*0.22, w*0.12, h*0.06);
+  ctx.fillStyle = '#ffcc55';
+  if (wingUp) ctx.fillRect(x + w*0.42, y + h*0.02, w*0.16, h*0.22);
+  else ctx.fillRect(x + w*0.38, y + h*0.35, w*0.2, h*0.22);
+  ctx.fillStyle = '#ee8800';
+  ctx.fillRect(x + w*0.2, y + h*0.3, w*0.2, h*0.2);
+}
+
+function drawBirdByType(bird, x, y, w, h, frame) {
+  if (bird.name === '小蓝') drawBlueBird(x, y, w, h, frame);
+  else if (bird.name === '小蓝莓') drawBlueberryBird(x, y, w, h, frame);
+  else if (bird.name === '小绿') drawGreenBird(x, y, w, h, frame);
+  else if (bird.name === '小芒果') drawMangoBird(x, y, w, h, frame);
+}
+
+// --- MARIO-STYLE TILES ---
+
+function drawBrick(x, y, w, h) {
+  ctx.fillStyle = '#c84c0c'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#e09050'; ctx.fillRect(x + 1, y + 1, w - 2, 1); ctx.fillRect(x + 1, y + 1, 1, h - 2);
+  ctx.fillStyle = '#a03000'; ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x + w - 1, y, 1, h);
+  ctx.fillStyle = '#8b4513'; ctx.fillRect(x + w/2 - 1, y, 2, h/2); ctx.fillRect(x + w/4, y + h/2, w/2, 2);
+}
+
+function drawMysteryBox(x, y, w, h, frame) {
+  const glow = Math.sin(frame * 0.15) * 0.3 + 0.7;
+  ctx.fillStyle = '#ffb800'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#ffdd60'; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.fillStyle = '#c88000'; ctx.fillRect(x, y + h - 2, w, 2); ctx.fillRect(x + w - 2, y, 2, h);
+  ctx.fillStyle = `rgba(180,100,0,${glow})`;
+  ctx.font = `${h*0.65}px "Courier New"`; ctx.textAlign = 'center';
+  ctx.fillText('?', x + w/2, y + h*0.75);
+}
+
+function drawPipe(x, y, w, h, warp) {
+  ctx.fillStyle = '#20a020'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#40d840'; ctx.fillRect(x + 2, y, w - 4, 2); ctx.fillRect(x + 2, y, 3, h);
+  ctx.fillStyle = '#106010'; ctx.fillRect(x + w - 4, y, 3, h);
+  const topW = w + 12, topH = 14;
+  if (warp) {
+    ctx.fillStyle = '#cc8800'; ctx.fillRect(x - 6, y - topH, topW, topH);
+    ctx.fillStyle = '#eebb30'; ctx.fillRect(x - 4, y - topH + 2, topW - 8, 3);
+    ctx.fillStyle = '#996600'; ctx.fillRect(x + topW - 10, y - topH, 3, topH);
+    ctx.fillStyle = '#fff'; ctx.font = '10px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText('↓', x + w/2, y - 3);
+  } else {
+    ctx.fillStyle = '#20a020'; ctx.fillRect(x - 6, y - topH, topW, topH);
+    ctx.fillStyle = '#40d840'; ctx.fillRect(x - 4, y - topH + 2, topW - 8, 3);
+    ctx.fillStyle = '#106010'; ctx.fillRect(x + topW - 10, y - topH, 3, topH);
+  }
+}
+
+function drawCloud(x, y, w, h) {
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(x + w*0.2, y + h*0.3, w*0.6, h*0.5);
+  ctx.fillRect(x + w*0.1, y + h*0.15, w*0.4, h*0.5);
+  ctx.fillRect(x + w*0.5, y + h*0.2, w*0.4, h*0.45);
+  ctx.fillRect(x + w*0.3, y, w*0.35, h*0.4);
+}
+
+function drawGround(x, y, w, h) {
+  ctx.fillStyle = '#5aad38'; ctx.fillRect(x, y, w, h * 0.3);
+  ctx.fillStyle = '#4a9d28';
+  for (let i = 0; i < w; i += 6) ctx.fillRect(x + i, y, 3, 4);
+  ctx.fillStyle = '#c84c0c'; ctx.fillRect(x, y + h * 0.3, w, h * 0.7);
+  ctx.fillStyle = '#a03c00';
+  for (let i = 0; i < w; i += 20)
+    for (let j = 0; j < h * 0.7; j += 20)
+      ctx.fillRect(x + i + (j % 40 === 0 ? 8 : 2), y + h * 0.3 + j + 3, 4, 2);
+}
+
+function drawCoin(x, y, r, frame) {
+  const shine = Math.abs(Math.sin(frame * 0.1));
+  ctx.fillStyle = shine > 0.5 ? '#ffdd00' : '#ccaa00';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffee55';
+  ctx.beginPath(); ctx.arc(x - r*0.2, y - r*0.2, r*0.3, 0, Math.PI * 2); ctx.fill();
+}
+
+// --- GAME STATE ---
+
+const GRAVITY = 0.55;
+const JUMP_FORCE = -12;
+const MOVE_SPEED = 5;
+const MAX_FALL_SPEED = 12;
+const PLATFORM_SPACING = 80;
+const BIRD_W = 36;
+const BIRD_H = 32;
+
+let frame = 0;
+let gameState = 'title';
+let winner = null;
+let cameraY = 0;
+let targetCameraY = 0;
+let p1Bird = null;
+let p2Bird = null;
+let selectionStep = 0;
+let selectTimer = 0;
+
+function makeBird(x, name, color, ctrl) {
+  return { x, y: 428, vx: 0, vy: 0, onGround: true, maxHeight: 0, coins: 0,
+           color, name, controller: ctrl || 'ai', speed: 1,
+           doubleJump: 0, hasDoubleJump: false, djCharges: 0 };
+}
+
+let blueBird = makeBird(140, '小蓝', '#4488ff');
+let blueberryBird = makeBird(300, '小蓝莓', '#6666cc');
+let greenBird = makeBird(460, '小绿', '#44cc44');
+let mangoBird = makeBird(620, '小芒果', '#ffbb33');
+
+function getAllBirds() { return [blueBird, blueberryBird, greenBird, mangoBird]; }
+
+// World objects
+let platforms = [];
+let coins = [];
+let pipes = [];
+let clouds = [];
+
+// Input
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space' && gameState === 'title') { gameState = 'select'; selectTimer = 180; }
+  if (e.code === 'KeyR' && gameState === 'over') resetGame();
+  e.preventDefault();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; e.preventDefault(); });
+
+// Mouse click handler
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  // In-game buttons
+  if (gameState === 'playing') {
+    const btnW = 100, btnH = 30, btnY = 50;
+    if (mx > W/2 - btnW - 10 && mx < W/2 - 10 && my > btnY && my < btnY + btnH) {
+      resetGameKeepSelection(); gameState = 'playing'; return;
+    }
+    if (mx > W/2 + 10 && mx < W/2 + 10 + btnW && my > btnY && my < btnY + btnH) {
+      resetGame(); return;
+    }
+  }
+
+  // Title screen
+  if (gameState === 'title') {
+    if (mx > 250 && mx < 550 && my > 370 && my < 440) {
+      gameState = 'select'; selectTimer = 300;
+    }
+    return;
+  }
+
+  // Game over buttons
+  if (gameState === 'over') {
+    const rbx = W/2 - 170, rby = H/2 + 70, rbw = 150, rbh = 55;
+    const hbx = W/2 + 20, hby = H/2 + 70, hbw = 150, hbh = 55;
+    if (mx > rbx && mx < rbx + rbw && my > rby && my < rby + rbh) { resetGameKeepSelection(); gameState = 'playing'; return; }
+    if (mx > hbx && mx < hbx + hbw && my > hby && my < hby + hbh) { resetGame(); return; }
+  }
+
+  // Character selection screen - 2x2 grid
+  if (gameState === 'select') {
+    const birds = getAllBirds();
+    const positions = [
+      { x: 80, y: 120 },   // 小蓝
+      { x: 420, y: 120 },  // 小绿
+      { x: 80, y: 280 },   // 小蓝莓
+      { x: 420, y: 280 }   // 小芒果
+    ];
+    const bw = 170, bh = 145;
+    for (let i = 0; i < birds.length; i++) {
+      const px = positions[i].x, py = positions[i].y;
+      if (mx > px && mx < px + bw && my > py && my < py + bh) {
+        assignBird(birds[i]);
+        break;
+      }
+    }
+  }
+});
+
+canvas.style.cursor = 'pointer';
+
+function assignBird(bird) {
+  if (selectionStep === 0 && bird.controller === 'ai') {
+    bird.controller = 'p1';
+    bird.speed = 2;
+    p1Bird = bird;
+    selectionStep = 2;
+    selectTimer = 300;
+  } else if (selectionStep === 2 && bird === p1Bird) {
+    p1Bird.controller = 'ai';
+    p1Bird.speed = 1;
+    p1Bird = null;
+    selectionStep = 0;
+    selectTimer = 300;
+  }
+}
+
+function generateWorld(startY, endY) {
+  let prevPlatforms = platforms.filter(p => p.y >= startY - 20 && p.y <= startY + 80);
+  if (prevPlatforms.length === 0) {
+    let bestY = -Infinity;
+    for (const p of platforms) { if (p.y > bestY && p.y <= startY + 80) bestY = p.y; }
+    prevPlatforms = platforms.filter(p => p.y === bestY);
+  }
+  const horizontalReach = 160;
+  for (let wy = startY; wy >= endY; wy -= PLATFORM_SPACING) {
+    const levelPlatforms = [];
+    const pw = 120 + Math.random() * 160;
+    let px;
+    if (prevPlatforms.length > 0) {
+      const ref = prevPlatforms[Math.floor(Math.random() * prevPlatforms.length)];
+      const refCx = ref.x + ref.w / 2, halfPw = pw / 2;
+      const minX = Math.max(30, refCx - horizontalReach - halfPw);
+      const maxX = Math.min(W - pw - 30, refCx + horizontalReach - halfPw);
+      px = (maxX > minX) ? minX + Math.random() * (maxX - minX) : 30 + Math.random() * (W - pw - 60);
+    } else {
+      px = 30 + Math.random() * (W - pw - 60);
+    }
+    const plat = { x: px, y: wy, w: pw, h: 16, type: 'brick' };
+    platforms.push(plat);
+    levelPlatforms.push(plat);
+
+    const mysteryCount = platforms.filter(p => p.type === 'mystery').length;
+    if (Math.random() < 0.5 && mysteryCount < 50) {
+      const pw2 = 80 + Math.random() * 100;
+      let px2;
+      if (prevPlatforms.length > 0) {
+        const ref = prevPlatforms[Math.floor(Math.random() * prevPlatforms.length)];
+        const refCx = ref.x + ref.w / 2, halfPw2 = pw2 / 2;
+        const minX = Math.max(30, refCx - horizontalReach - halfPw2);
+        const maxX = Math.min(W - pw2 - 30, refCx + horizontalReach - halfPw2);
+        px2 = (maxX > minX) ? minX + Math.random() * (maxX - minX) : 30 + Math.random() * (W - pw2 - 60);
+      } else {
+        px2 = 30 + Math.random() * (W - pw2 - 60);
+      }
+      platforms.push({ x: px2, y: wy - 15 + Math.random() * 25, w: pw2, h: 16, type: 'mystery' });
+      levelPlatforms.push(plat);
+    }
+
+    if (Math.random() < 0.6) {
+      coins.push({ x: 80 + Math.random() * (W - 160), y: wy - 25 + Math.random() * 20, r: 8, collected: false });
+    }
+    prevPlatforms = levelPlatforms;
+  }
+  for (let wy = startY; wy >= endY; wy -= 150) {
+    if (Math.random() < 0.6) {
+      clouds.push({ x: Math.random() * (W - 100), y: wy + Math.random() * 40, w: 60 + Math.random() * 50, h: 30 + Math.random() * 20 });
+    }
+  }
+}
+
+function resetGame() {
+  blueBird = makeBird(140, '小蓝', '#4488ff');
+  blueberryBird = makeBird(300, '小蓝莓', '#6666cc');
+  greenBird = makeBird(460, '小绿', '#44cc44');
+  mangoBird = makeBird(620, '小芒果', '#ffbb33');
+  p1Bird = null; p2Bird = null;
+  selectionStep = 0;
+  gameState = 'title';
+  initWorld();
+}
+
+function resetGameKeepSelection() {
+  const ctrls = getAllBirds().map(b => b.controller);
+  blueBird = makeBird(140, '小蓝', '#4488ff', ctrls[0]);
+  blueberryBird = makeBird(300, '小蓝莓', '#6666cc', ctrls[1]);
+  greenBird = makeBird(460, '小绿', '#44cc44', ctrls[2]);
+  mangoBird = makeBird(620, '小芒果', '#ffbb33', ctrls[3]);
+  p1Bird = null;
+  for (const b of getAllBirds()) { if (b.controller === 'p1') p1Bird = b; }
+  initWorld();
+}
+
+function initWorld() {
+  platforms = []; coins = []; pipes = []; clouds = [];
+  cameraY = 0; targetCameraY = 0; winner = null; frame = 0;
+
+  platforms.push({ x: 0, y: 460, w: W, h: 140, type: 'ground' });
+  platforms.push({ x: 60, y: 380, w: 300, h: 16, type: 'brick' });
+  platforms.push({ x: 420, y: 380, w: 300, h: 16, type: 'brick' });
+  platforms.push({ x: 180, y: 290, w: 400, h: 16, type: 'mystery' });
+
+  generateWorld(280, -9600);
+
+  const pipePositions = [
+    { y: 380, targetY: -4540 },
+    { y: -4540, targetY: -9540 },
+    { y: -9540, targetY: -9580 }
+  ];
+  for (const pp of pipePositions) {
+    const platX = 100 + Math.random() * 300;
+    const platW = 200;
+    platforms.push({ x: platX, y: pp.y, w: platW, h: 16, type: 'brick' });
+    const pipeX = platX + platW / 2 - 16;
+    pipes.push({ x: pipeX, y: pp.y, w: 32, h: 40, warp: true,
+      targetX: 200 + Math.random() * 400, targetY: pp.targetY });
+  }
+}
+
+function updateBird(bird, ctrl) {
+  let spd = MOVE_SPEED * (bird.speed || 1);
+  if (ctrl.left) bird.vx = -spd;
+  else if (ctrl.right) bird.vx = spd;
+  else bird.vx *= 0.8;
+
+  bird.vy += GRAVITY;
+  if (bird.vy > MAX_FALL_SPEED) bird.vy = MAX_FALL_SPEED;
+
+  const prevY = bird.y;
+  bird.x += bird.vx;
+  bird.y += bird.vy;
+
+  if (bird.x < 0) bird.x = 0;
+  if (bird.x > W - BIRD_W) bird.x = W - BIRD_W;
+
+  bird.onGround = false;
+  bird.onPipe = null;
+  let landedOnGround = false;
+  for (const p of platforms) {
+    if (bird.x + BIRD_W > p.x + 4 && bird.x < p.x + p.w - 4) {
+      if (bird.vy >= 0 && prevY + BIRD_H <= p.y + 10 && bird.y + BIRD_H >= p.y) {
+        bird.y = p.y - BIRD_H;
+        bird.vy = 0;
+        bird.onGround = true;
+        if (p.type === 'ground') landedOnGround = true;
+        if (p.type === 'mystery' && !bird.hasDoubleJump) {
+          bird.hasDoubleJump = true;
+          bird.doubleJump = 300;
+          bird.djCharges = 3;
+        }
+      }
+    }
+  }
+
+  if (landedOnGround) bird.maxHeight = 0;
+
+  for (const p of pipes) {
+    const topX = p.x - 6, topY = p.y - 14, topW = p.w + 12;
+    if (bird.x + BIRD_W > topX + 4 && bird.x < topX + topW - 4) {
+      if (bird.vy >= 0 && prevY + BIRD_H <= topY + 10 && bird.y + BIRD_H >= topY) {
+        bird.y = topY - BIRD_H;
+        bird.vy = 0;
+        bird.onGround = true;
+        if (p.warp) bird.onPipe = p;
+      }
+    }
+  }
+
+  if (ctrl.jump && bird.onGround) {
+    bird.vy = JUMP_FORCE;
+    bird.onGround = false;
+    bird.onPipe = null;
+  }
+
+  if (ctrl.jump && !bird.onGround && bird.hasDoubleJump && bird.djCharges > 0) {
+    bird.vy = JUMP_FORCE;
+    bird.djCharges--;
+    if (bird.djCharges <= 0) { bird.hasDoubleJump = false; bird.doubleJump = 0; }
+  }
+
+  if (ctrl.down && bird.onPipe && bird.onPipe.warp) {
+    bird.x = bird.onPipe.targetX;
+    bird.y = bird.onPipe.targetY;
+    bird.vy = 0;
+    bird.onPipe = null;
+    bird.onGround = false;
+  }
+
+  const heightAboveGround = 460 - bird.y;
+  if (heightAboveGround > bird.maxHeight) bird.maxHeight = heightAboveGround;
+}
+
+// AI control logic
+function aiControl(bird) {
+  const ctrl = { left: false, right: false, jump: false, down: false };
+  if (!bird) return ctrl;
+
+  const jumpH = (JUMP_FORCE * JUMP_FORCE) / (2 * GRAVITY);
+  const cx = bird.x + BIRD_W / 2, cy = bird.y;
+  const hasDJ = bird.hasDoubleJump && bird.djCharges > 0;
+  const maxReach = hasDJ ? jumpH * 1.8 : jumpH;
+
+  // === PERSONALITY (each bird has unique playstyle) ===
+  const sd = (bird.name.charCodeAt(1) || 0) * 137 + (bird.name.charCodeAt(2) || 0) * 53;
+  const rn = n => Math.abs(Math.sin(sd + n * 12.9898)) * 43758.5453 % 1;
+  const P = { agg: 0.3 + rn(1) * 0.7, dir: rn(2) > 0.5 ? 1 : -1, pat: 0.1 + rn(3) * 0.5, coin: 0.2 + rn(4) * 0.8, myst: 0.3 + rn(5) * 0.7, cau: 0.05 + rn(6) * 0.5 };
+
+  // === RACING ===
+  const all = getAllBirds(), goal = 10000;
+  let rank = [...all].sort((a, b) => b.maxHeight - a.maxHeight);
+  const myR = rank.findIndex(b => b === bird), ld = rank[0], ldH = ld ? ld.maxHeight : 0;
+  const behind = ldH - bird.maxHeight, lead = bird.maxHeight >= ldH;
+  const goalNear = Math.max(0, goal - ldH);
+  let risk = Math.min(1, P.agg * 0.7 + (!lead ? Math.min(0.3, behind / 500) : 0) + (myR >= 3 ? 0.2 : 0) + (goalNear < 2000 ? (2000 - goalNear) / 2000 * 0.4 : 0));
+
+  // === PIPE (instant warp if beneficial) ===
+  if (bird.onPipe && bird.onPipe.warp) {
+    const g = bird.y - bird.onPipe.targetY;
+    if ((behind > 20 && g > 40) || g > 200 || (goalNear < 2000 && g > 15)) { ctrl.down = true; return ctrl; }
+  }
+
+  // === PHYSICS SIMULATION ===
+  const sim = (fx, fy, vx, tY) => {
+    let sx = fx, sy = fy, svy = JUMP_FORCE, svx = vx > 0 ? MOVE_SPEED : vx < 0 ? -MOVE_SPEED : 0;
+    for (let f = 0; f < 90; f++) {
+      sx += svx; sy += svy; svy += GRAVITY;
+      if (svy > MAX_FALL_SPEED) svy = MAX_FALL_SPEED;
+      if (sy <= tY && svy >= 0) return { x: sx, y: sy, ok: true, frames: f + 1 };
+      if (sy <= tY && f > 50) return { x: sx, y: sy, ok: true, frames: f + 1 };
+    }
+    return { x: sx, y: sy, ok: sy <= tY, frames: 90 };
+  };
+  const jOk = (fx, pFrom, pTo) => {
+    const dy = pFrom.y - pTo.y;
+    if (dy <= 0 || dy > maxReach) return null;
+    const d = pFrom.x + pFrom.w / 2 < pTo.x + pTo.w / 2 ? 1 : -1;
+    const r = sim(fx, pFrom.y - BIRD_H, d, pTo.y - BIRD_H);
+    if (r.ok && r.x > pTo.x + 4 && r.x < pTo.x + pTo.w - 4) return { landX: r.x, landY: r.y, frames: r.frames, dir: d };
+    return null;
+  };
+
+  // Find current platform
+  let cp = null;
+  for (const pl of platforms) {
+    if (Math.abs(cy + BIRD_H - pl.y) < 5 && cx > pl.x && cx < pl.x + pl.w) { cp = pl; break; }
+  }
+
+  // === BUILD PLATFORM GRAPH (with landing positions) ===
+  const idx = new Map(); for (let i = 0; i < platforms.length; i++) idx.set(platforms[i], i);
+  const N = platforms.length;
+
+  // For each platform, precompute reachable platforms from 5 sampled landing positions
+  const samplePositions = [0.15, 0.3, 0.5, 0.7, 0.85]; // 5 landing zones
+  const edges = new Array(N); // edges[i] = [{to, fromX, landX, cost}]
+  for (let i = 0; i < N; i++) {
+    edges[i] = [];
+    const pi = platforms[i];
+    for (const frac of samplePositions) {
+      const fromX = pi.x + pi.w * frac;
+      for (const pj of platforms) {
+        if (pj.y >= pi.y - 10) continue;
+        const r = jOk(fromX, pi, pj);
+        if (r) {
+          const landQuality = 1 - Math.abs(r.landX - (pj.x + pj.w / 2)) / (pj.w / 2);
+          const cost = r.frames * 0.5 + Math.abs(fromX - (pi.x + pi.w / 2)) * 0.3 + (1 - landQuality) * 25;
+          // Avoid duplicates: only keep best cost for same (fromPlatform, toPlatform, fromX region)
+          let dup = false;
+          for (let e = 0; e < edges[i].length; e++) {
+            if (edges[i][e].to === idx.get(pj) && Math.abs(edges[i][e].fromX - fromX) < 15) {
+              if (cost < edges[i][e].cost) { edges[i][e] = { to: idx.get(pj), fromX, landX: r.landX, cost }; }
+              dup = true; break;
+            }
+          }
+          if (!dup) edges[i].push({ to: idx.get(pj), fromX, landX: r.landX, cost });
+        }
+      }
+    }
+    // Add double-jump skip edges (skip one level)
+    if (hasDJ) {
+      for (const frac of samplePositions) {
+        const fromX = pi.x + pi.w * frac;
+        for (const pj of platforms) {
+          if (pj.y >= pi.y - 15) continue;
+          const dy = pi.y - pj.y;
+          if (dy <= jumpH || dy > maxReach) continue;
+          const r = jOk(fromX, pi, pj);
+          if (r) {
+            edges[i].push({ to: idx.get(pj), fromX, landX: r.landX, cost: r.frames * 0.5 + 30, dj: true });
+          }
+        }
+      }
+    }
+  }
+
+  // === DIJKSTRA WITH LANDING-POSITION-AWARE STATE ===
+  // State: (platformIndex, approxX). We track best path to each platform with landing position.
+  const d = new Array(N).fill(Infinity);
+  const prv = new Array(N).fill(null);
+  const landAt = new Array(N).fill(null);
+  const launchFrom = new Array(N).fill(null);
+
+  const startI = cp ? idx.get(cp) : null;
+  if (startI !== undefined && startI !== null) {
+    d[startI] = 0;
+    landAt[startI] = cx;
+  }
+
+  const uv = new Set(); for (let i = 0; i < N; i++) if (i !== startI || startI === null) uv.add(i);
+  if (startI !== null) uv.delete(startI);
+
+  // Also add "current air position" as virtual start
+  if (!cp && bird.vy < 0) {
+    // Bird is in the air, find which platforms are reachable from current position
+    for (const pj of platforms) {
+      if (pj.y >= cy + 10) continue;
+      const j = idx.get(pj);
+      if (j === undefined) continue;
+      const dir = cx < pj.x + pj.w / 2 ? 1 : -1;
+      const r = sim(cx, cy, dir, pj.y - BIRD_H);
+      if (r.ok && r.x > pj.x + 4 && r.x < pj.x + pj.w - 4) {
+        const cost = r.frames * 0.5;
+        if (cost < d[j]) { d[j] = cost; prv[j] = -1; landAt[j] = r.x; launchFrom[j] = cx; }
+      }
+    }
+  }
+
+  while (uv.size > 0) {
+    let u = null, minD = Infinity;
+    for (const i of uv) { if (d[i] < minD) { minD = d[i]; u = i; } }
+    if (u === null || minD === Infinity) break;
+    uv.delete(u);
+
+    const lux = landAt[u] || platforms[u].x + platforms[u].w / 2;
+    for (const e of edges[u]) {
+      if (!uv.has(e.to)) continue;
+      const walkCost = Math.abs(e.fromX - lux) * (0.4 + P.pat * 0.3);
+      const weight = e.cost + walkCost - (platforms[e.to].type === 'mystery' ? 15 + P.myst * 25 : 0);
+      const alt = d[u] + Math.max(3, weight);
+      if (alt < d[e.to]) { d[e.to] = alt; prv[e.to] = u; landAt[e.to] = e.landX; launchFrom[e.to] = e.fromX; }
+    }
+  }
+
+  // === SELECT BEST TARGET (evaluate all reachable platforms) ===
+  let bestPlat = null, bestVal = -Infinity;
+  for (let i = 0; i < N; i++) {
+    if (d[i] === Infinity) continue;
+    const pl = platforms[i];
+    if (pl === cp) continue;
+    if (pl.y >= cy) continue;
+    const dy = cy - pl.y;
+    if (!cp && dy > maxReach) continue;
+    if (cp && dy > jumpH && !hasDJ) continue;
+
+    // Value = height gain efficiency (height per cost) + bonuses
+    const efficiency = dy / Math.max(1, d[i]);
+    let val = dy * 2.5 + efficiency * 30;
+
+    if (pl.type === 'mystery') val += 50 + P.myst * 70;
+    // Occupied check
+    let occ = false;
+    for (const b of all) {
+      if (b === bird || !b.onGround) continue;
+      if (Math.abs(b.y + BIRD_H - pl.y) < 3 && b.x + BIRD_W > pl.x && b.x < pl.x + pl.w) occ = true;
+    }
+    if (occ) val -= 20 + P.cau * 100;
+    // Dead end penalty
+    let upCount = 0;
+    for (const p2 of platforms) {
+      if (p2.y < pl.y - 20 && (pl.y - p2.y) <= jumpH && Math.abs((pl.x + pl.w / 2) - (p2.x + p2.w / 2)) < 200) upCount++;
+    }
+    if (upCount === 0) val -= 150 - P.agg * 80;
+    else val += upCount * (3 + P.agg * 8);
+    // Landing quality
+    if (landAt[i] !== null) {
+      val -= Math.abs(landAt[i] - (pl.x + pl.w / 2)) * 0.4;
+    }
+    // Racing
+    if (behind > 50) val += (15 + Math.min(behind * 0.4, 80)) * (0.6 + P.agg * 0.4);
+    if (goalNear < 3000) val += (3000 - goalNear) / 10 * (dy / 500);
+    // Prefer platforms with DJ edges (mystery boxes give DJ)
+    if (pl.type === 'mystery' && !hasDJ) val += 60;
+
+    if (val > bestVal) { bestVal = val; bestPlat = pl; }
+  }
+
+  // Fallback scan
+  if (!bestPlat) {
+    let bs = -Infinity;
+    for (const pl of platforms) {
+      if (pl.y >= cy) continue;
+      const dy = cy - pl.y;
+      if (dy > maxReach) continue;
+      let s = dy * 2.5 - Math.abs(cx - (pl.x + pl.w / 2)) * 0.1;
+      if (pl.type === 'mystery') s += 40;
+      if (s > bs) { bs = s; bestPlat = pl; }
+    }
+  }
+
+  // === GET IMMEDIATE STEP from path ===
+  let imm = bestPlat;
+  if (bestPlat && cp && idx.get(cp) !== undefined) {
+    const ti = idx.get(bestPlat);
+    if (ti !== undefined && prv[ti] !== null && prv[ti] !== -1) {
+      let step = ti;
+      while (prv[step] !== null && prv[step] !== -1 && prv[step] !== idx.get(cp)) step = prv[step];
+      if (prv[step] === idx.get(cp) || prv[step] === -1) imm = platforms[step];
+    }
+  }
+
+  // === PREDICT OPPONENT POSITIONS (2 sec ahead) ===
+  const blockedX = new Set();
+  if (imm && cp) {
+    const immCx = imm.x + imm.w / 2;
+    for (const b of all) {
+      if (b === bird) continue;
+      // Predict where this opponent will be in ~2 seconds
+      const predX = b.x + b.vx * 40;
+      const predY = b.y + b.vy * 40 + 0.5 * GRAVITY * 40 * 40;
+      // If opponent will be near the target platform, mark region as contested
+      if (Math.abs(predY + BIRD_H - imm.y) < 40 && Math.abs(predX + BIRD_W / 2 - immCx) < imm.w / 2 + 40) {
+        for (let bx = imm.x - 10; bx < imm.x + imm.w + 10; bx += 5) {
+          if (Math.abs(bx - predX) < 50) blockedX.add(bx | 0);
+        }
+      }
+    }
+  }
+
+  // === COIN ===
+  let bestCoin = null;
+  if (imm) {
+    let bc = 0, tCx = imm.x + imm.w / 2;
+    for (const c of coins) {
+      if (c.collected || c.y > cy || c.y < imm.y - 70) continue;
+      const dp = Math.abs(c.x - tCx), da = cy - c.y;
+      if (da > maxReach + 20 || dp > 70 + P.coin * 90) continue;
+      const b = (35 + P.coin * 55 - dp * 0.35) + (da > 8 ? da * 1.2 : 0);
+      if (b > bc) { bc = b; bestCoin = c; }
+    }
+  }
+
+  // === TARGET X (precise launch positioning) ===
+  let targetX = cx;
+  if (bestCoin && imm) {
+    const cd = Math.abs(cx - bestCoin.x), pd = Math.abs(cx - (imm.x + imm.w / 2));
+    targetX = cd < pd + 20 + P.coin * 70 ? bestCoin.x : imm.x + imm.w / 2;
+  } else if (bestCoin) {
+    targetX = bestCoin.x;
+  } else if (imm && cp) {
+    // Find closest valid launch position, avoiding blocked zones
+    const ti = idx.get(imm);
+    let bestLX = null, bestD = Infinity;
+    for (const e of edges[idx.get(cp)] || []) {
+      if (e.to !== ti) continue;
+      // Penalize blocked positions
+      const blockPen = blockedX.has(e.fromX | 0) ? 80 : 0;
+      const dist = Math.abs(e.fromX - cx) + blockPen;
+      if (dist < bestD) { bestD = dist; bestLX = e.fromX; }
+    }
+    // If no edge found, scan
+    if (bestLX === null) {
+      for (let lx = cp.x + 6; lx < cp.x + cp.w - 6; lx += 4) {
+        if (jOk(lx, cp, imm)) {
+          const bp = blockedX.has(lx | 0) ? 80 : 0;
+          const dist = Math.abs(lx - cx) + bp;
+          if (dist < bestD) { bestD = dist; bestLX = lx; }
+        }
+      }
+    }
+    targetX = bestLX !== null ? bestLX : imm.x + imm.w / 2;
+  } else if (imm) {
+    targetX = imm.x + imm.w / 2;
+  } else {
+    targetX = cx + ((Math.floor(frame / 180) % 2 === 0) ? 1 : -1) * (80 + P.agg * 100);
+  }
+
+  // === MOVE (instant direction change) ===
+  const dx = targetX - cx;
+  if (Math.abs(dx) > 4) { if (dx > 0) ctrl.right = true; else ctrl.left = true; }
+  else if (imm && bird.onGround) { if (dx > 0.5) ctrl.right = true; else if (dx < -0.5) ctrl.left = true; }
+
+  // === JUMP (frame-perfect execution) ===
+  if (bird.onGround && imm) {
+    const dy = cy - imm.y;
+    if (dy > 3 && dy <= maxReach) {
+      const r = sim(cx, cy, cx < imm.x + imm.w / 2 ? 1 : -1, imm.y - BIRD_H);
+      if (r.ok && r.x > imm.x + 4 && r.x < imm.x + imm.w - 4) {
+        // Jump if landing is decent, or immediately if well-aligned
+        const lq = 1 - Math.abs(r.x - (imm.x + imm.w / 2)) / (imm.w / 2);
+        if (lq > 0.15 - P.pat * 0.15 || Math.abs(dx) < 8) ctrl.jump = true;
+      } else if (cp && jOk(cx, cp, imm)) {
+        ctrl.jump = true; // at valid launch position
+      }
+    }
+  }
+
+  // === DOUBLE JUMP (aggressive: use early and often) ===
+  if (!bird.onGround && hasDJ && imm) {
+    const dy = cy - imm.y, hd = Math.abs(cx - (imm.x + imm.w / 2));
+    if (dy > 15 && dy < maxReach && hd < imm.w / 2 + 90 && bird.vy > -6 && bird.vy < 10) {
+      if (dy > jumpH * 0.6 || behind > 100 || myR >= 2 || !cp) {
+        const r = sim(cx, cy, cx < imm.x + imm.w / 2 ? 1 : -1, imm.y - BIRD_H);
+        if (r.ok && r.x > imm.x + 4 && r.x < imm.x + imm.w - 4) ctrl.jump = true;
+      }
+    }
+  }
+
+  // === EDGE (jump away from platform edges) ===
+  if (bird.onGround) {
+    for (const pl of platforms) {
+      if (Math.abs(cy + BIRD_H - pl.y) < 5 && cx > pl.x && cx < pl.x + pl.w) {
+        if (cx < pl.x + 20) { ctrl.right = true; ctrl.jump = true; break; }
+        if (cx > pl.x + pl.w - 20) { ctrl.left = true; ctrl.jump = true; break; }
+        if (pl.type !== 'ground' && pl.w < 200 && !ctrl.jump && frame % 45 < 3) { ctrl.jump = true; break; }
+      }
+    }
+  }
+
+  // === STUCK ===
+  if (bird.onGround && bird.vy === 0 && !imm) {
+    if (frame % 30 < 8) {
+      ctrl.jump = true;
+      let lc = 0, rc = 0;
+      for (const pl of platforms) { if (pl.x + pl.w / 2 < cx) lc++; else rc++; }
+      if (lc > rc) ctrl.left = true; else ctrl.right = true;
+    }
+  }
+
+  // === SAFETY JUMP ===
+  if (bird.onGround && bird.vy === 0 && !ctrl.jump && frame % 35 < 2) {
+    for (const pl of platforms) {
+      if (pl.y < cy && (cy - pl.y) <= maxReach && Math.abs(cx - (pl.x + pl.w / 2)) < pl.w / 2 + 80) { ctrl.jump = true; break; }
+    }
+  }
+
+  // === FALL RECOVERY (find nearest safe landing) ===
+  if (!bird.onGround && bird.vy > 2) {
+    let nb = null, nd = 450;
+    for (const pl of platforms) {
+      if (pl.y > cy && pl.y < cy + 350) {
+        const d = Math.abs(cx - (pl.x + pl.w / 2));
+        if (d < nd && cx > pl.x - 50 && cx < pl.x + pl.w + 50) { nd = d; nb = pl; }
+      }
+    }
+    if (nb) { const td = (nb.x + nb.w / 2) - cx; if (Math.abs(td) > 5) { if (td > 0) ctrl.right = true; else ctrl.left = true; } }
+  }
+
+  return ctrl;
+}
+
+
+function update() {
+  frame++;
+
+  const p1Ctrl = { left: keys['ArrowLeft'], right: keys['ArrowRight'], jump: keys['ArrowUp'], down: keys['ArrowDown'] };
+  const p2Ctrl = { left: keys['KeyA'], right: keys['KeyD'], jump: keys['KeyW'], down: keys['KeyS'] };
+
+  // Pre-compute AI controls for each bird
+  const aiCtrls = {};
+  for (const b of getAllBirds()) aiCtrls[b.name] = aiControl(b);
+
+  function getCtrl(bird) {
+    if (bird.controller === 'p1') return p1Ctrl;
+    if (bird.controller === 'p2') return p2Ctrl;
+    return aiCtrls[bird.name];
+  }
+
+  for (const b of getAllBirds()) updateBird(b, getCtrl(b));
+
+  // Double-jump timer
+  for (const b of getAllBirds()) {
+    if (b.hasDoubleJump && b.doubleJump > 0) {
+      b.doubleJump--;
+      if (b.doubleJump <= 0) { b.hasDoubleJump = false; b.djCharges = 0; }
+    }
+  }
+
+  // Camera
+  let camTargetY;
+  if (p1Bird) camTargetY = p1Bird.y;
+  else camTargetY = Math.min(...getAllBirds().map(b => b.y));
+  cameraY = camTargetY - H / 2;
+
+  // Fallen into void
+  for (const b of getAllBirds()) {
+    if (b.y > 800) { gameState = 'over'; winner = getHighestBird([b]); break; }
+  }
+
+  // Win condition: first to reach 1000m (10000 pixels)
+  const goal = 10000;
+  for (const b of getAllBirds()) {
+    if (b.maxHeight >= goal) {
+      gameState = 'over';
+      // Find the bird with highest maxHeight
+      winner = b;
+      for (const b2 of getAllBirds()) {
+        if (b2.maxHeight > winner.maxHeight) winner = b2;
+      }
+      break;
+    }
+  }
+
+  // Collect coins
+  for (const c of coins) {
+    if (c.collected) continue;
+    for (const b of getAllBirds()) {
+      if (b.x + BIRD_W > c.x - c.r && b.x < c.x + c.r &&
+          b.y + BIRD_H > c.y - c.r && b.y < c.y + c.r) {
+        c.collected = true; b.coins++; break;
+      }
+    }
+  }
+
+  // Pipe collision
+  for (const p of pipes) {
+    for (const b of getAllBirds()) {
+      if (b.x + BIRD_W > p.x + 4 && b.x < p.x + p.w - 4 &&
+          b.y + BIRD_H > p.y - 12 && b.y < p.y + p.h - 4) {
+        if (b.x + BIRD_W/2 < p.x + p.w/2) b.x = p.x - BIRD_W;
+        else b.x = p.x + p.w;
+      }
+    }
+  }
+
+  // Generate more world
+  const minWorldY = cameraY - 600;
+  const lowestPlatform = platforms.reduce((min, p) => Math.min(min, p.y), Infinity);
+  if (lowestPlatform > minWorldY + 200) {
+    generateWorld(lowestPlatform - PLATFORM_SPACING, minWorldY);
+  }
+
+  // Platforms never disappear — only trim if memory cap exceeded
+  const maxPlatforms = 250;
+  if (platforms.length > maxPlatforms) {
+    const groundPlat = platforms.find(p => p.type === 'ground');
+    platforms.sort((a, b) => a.y - b.y);
+    platforms.length = maxPlatforms;
+    if (groundPlat && !platforms.includes(groundPlat)) {
+      platforms.push(groundPlat);
+    }
+  }
+  // Cleanup: only collected coins and very distant clouds
+  for (let i = coins.length - 1; i >= 0; i--) {
+    if (coins[i].collected) coins.splice(i, 1);
+  }
+  const cloudCleanupY = cameraY + H + 3000;
+  for (let i = clouds.length - 1; i >= 0; i--) {
+    if (clouds[i].y >= cloudCleanupY) clouds.splice(i, 1);
+  }
+}
+
+function getHighestBird(exclude) {
+  let best = null;
+  for (const b of getAllBirds()) {
+    if (exclude && exclude.includes(b)) continue;
+    if (!best || b.maxHeight > best.maxHeight) best = b;
+  }
+  return best;
+}
+
+function isCP(a, b) {
+  if (!a || !b) return false;
+  if ((a.name === '小蓝' && b.name === '小绿') || (a.name === '小绿' && b.name === '小蓝')) return true;
+  if ((a.name === '小蓝莓' && b.name === '小芒果') || (a.name === '小芒果' && b.name === '小蓝莓')) return true;
+  return false;
+}
+
+function getWinTag(bird) {
+  if (!bird || !winner) return '';
+  if (winner === bird) {
+    if (bird.controller === 'p1') return '[你赢了!]';
+    if (p1Bird && isCP(bird, p1Bird)) return '[CP赢了!]';
+    return '[对手赢了!]';
+  }
+  return '';
+}
+
+function drawParallaxBg() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#5c94fc'); grad.addColorStop(1, '#87ceeb');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#68b848';
+  for (let i = 0; i < 6; i++) {
+    const hx = (i * 180 + ((cameraY * 0.3) % 180)) % (W + 200) - 100;
+    const hy = H - 80 + Math.sin(i * 1.5) * 30;
+    ctx.beginPath(); ctx.arc(hx, hy, 70 + Math.sin(i) * 30, Math.PI, 0); ctx.fill();
+  }
+  ctx.fillStyle = '#48a838';
+  for (let i = 0; i < 8; i++) {
+    const bx = (i * 130 + ((cameraY * 0.5) % 130)) % (W + 100) - 50;
+    const by = H - 60 + Math.cos(i) * 20;
+    ctx.beginPath(); ctx.arc(bx, by, 25, Math.PI, 0); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx + 20, by, 20, Math.PI, 0); ctx.fill();
+  }
+}
+
+function drawHudPanel(x, y, w, h, bird, tagColor) {
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = tagColor;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, w, h);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  drawParallaxBg();
+
+  ctx.save();
+  ctx.translate(0, -cameraY);
+
+  for (const c of clouds) {
+    if (c.y > cameraY - 100 && c.y < cameraY + H + 100) drawCloud(c.x, c.y, c.w, c.h);
+  }
+  for (const p of pipes) {
+    if (p.y > cameraY - 100 && p.y < cameraY + H + 100) drawPipe(p.x, p.y, p.w, p.h, p.warp);
+  }
+  for (const p of platforms) {
+    if (p.y > cameraY - 100 && p.y < cameraY + H + 100) {
+      if (p.type === 'ground') drawGround(p.x, p.y, p.w, p.h);
+      else if (p.type === 'mystery') drawMysteryBox(p.x, p.y, p.w, p.h, frame);
+      else drawBrick(p.x, p.y, p.w, p.h);
+    }
+  }
+  for (const c of coins) {
+    if (c.collected) continue;
+    if (c.y > cameraY - 50 && c.y < cameraY + H + 50) drawCoin(c.x, c.y, c.r, frame);
+  }
+
+  // Draw all 4 birds
+  for (const b of getAllBirds()) {
+    drawBirdByType(b, b.x, b.y, BIRD_W, BIRD_H, frame);
+  }
+
+  ctx.restore();
+
+  // --- HUD: 4 panels in 2 columns ---
+  const panelW = 190, panelH = 36;
+  const birds = getAllBirds();
+  const leftX = 10, rightX = W - 200;
+
+  for (let i = 0; i < birds.length; i++) {
+    const b = birds[i];
+    const isLeft = (i < 2);
+    const px = isLeft ? leftX : rightX;
+    const py = 10 + (i % 2) * (panelH + 6);
+
+    const tagColor = b.color;
+    drawHudPanel(px, py, panelW, panelH, b, tagColor);
+
+    ctx.fillStyle = tagColor;
+    ctx.font = 'bold 11px "Courier New"';
+    ctx.textAlign = 'left';
+
+    const h = Math.max(0, Math.floor(b.maxHeight / 10));
+    const playerWon = winner && (winner.controller === 'p1' || winner.controller === 'p2');
+    let tag;
+    if (winner === b) {
+      if (b.controller === 'p1') tag = '[你赢了!]';
+      else if (p1Bird && isCP(b, p1Bird)) tag = '[CP赢了!]';
+      else tag = '[对手赢了!]';
+    } else {
+      tag = (b.controller === 'p1') ? '[玩家]' : '[电脑]';
+    }
+
+    ctx.fillText(`${b.name}${tag}`, px + 6, py + 14);
+    const dj = b.hasDoubleJump ? ' [2x]' : '';
+    ctx.fillText(`${h}m  ¢${b.coins}${dj}`, px + 6, py + 28);
+  }
+
+  // Height comparison bar (4 birds)
+  const barW = 300, barH = 12;
+  const barX = W/2 - barW/2, barY = 88;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(barX - 2, barY - 2, barW + 4, barH * birds.length + 8);
+  ctx.fillStyle = '#333';
+  ctx.fillRect(barX, barY, barW, barH * birds.length);
+  const maxH = Math.max(...birds.map(b => Math.max(0, Math.floor(b.maxHeight / 10))), 1);
+  const barColors = ['#4488ff', '#6666cc', '#44cc44', '#ffbb33'];
+  for (let i = 0; i < birds.length; i++) {
+    const h = Math.max(0, Math.floor(birds[i].maxHeight / 10));
+    ctx.fillStyle = barColors[i];
+    ctx.fillRect(barX, barY + i * barH, Math.min(barW, (h / maxH) * barW), barH - 1);
+  }
+  ctx.fillStyle = '#fff';
+  ctx.font = '8px "Courier New"';
+  ctx.textAlign = 'center';
+  ctx.fillText(`蓝${Math.floor(Math.max(0,birds[0].maxHeight/10))}m 莓${Math.floor(Math.max(0,birds[1].maxHeight/10))}m 绿${Math.floor(Math.max(0,birds[2].maxHeight/10))}m 芒${Math.floor(Math.max(0,birds[3].maxHeight/10))}m  目标:1000m`, W/2, barY + barH * birds.length + 14);
+
+  // Controls hint
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '11px "Courier New"';
+  ctx.textAlign = 'center';
+  ctx.fillText('玩家: ↑ ← ↓ →  |  未被选中的角色由电脑操控', W/2, H - 10);
+
+  // Debug
+  ctx.fillStyle = '#fff';
+  ctx.font = '9px "Courier New"';
+  ctx.textAlign = 'left';
+  const dbgX = 5, dbgY = H - 28;
+  ctx.fillText(`状态:${gameState} P1:${p1Bird?p1Bird.name:'无'}`, dbgX, dbgY);
+  if (gameState === 'playing') {
+    ctx.fillText(`↑${keys['ArrowUp']?'↓':'_'} ←${keys['ArrowLeft']?'↓':'_'} ↓${keys['ArrowDown']?'↓':'_'} →${keys['ArrowRight']?'↓':'_'}`, dbgX, dbgY + 11);
+  }
+
+  // In-game buttons
+  if (gameState === 'playing') {
+    const btnW = 100, btnH = 28, btnY = 44;
+    const rstX = W/2 - btnW - 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(rstX, btnY, btnW, btnH);
+    ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2; ctx.strokeRect(rstX, btnY, btnW, btnH);
+    ctx.fillStyle = '#ffaa00'; ctx.font = 'bold 12px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText('重新开始', rstX + btnW/2, btnY + 19);
+
+    const homeX = W/2 + 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(homeX, btnY, btnW, btnH);
+    ctx.strokeStyle = '#5bf'; ctx.lineWidth = 2; ctx.strokeRect(homeX, btnY, btnW, btnH);
+    ctx.fillStyle = '#5bf';
+    ctx.fillText('返回首页', homeX + btnW/2, btnY + 19);
+  }
+
+  // Title Screen
+  if (gameState === 'title') {
+    ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 40px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText('超 级 小 鸟', W/2, 130);
+    ctx.fillStyle = '#fff'; ctx.font = '16px "Courier New"';
+    ctx.fillText('四大角色 — 比谁飞得更高!', W/2, 180);
+
+    // 4 birds preview in a row
+    const previewBirds = getAllBirds();
+    const previewPositions = [130, 280, 430, 580];
+    const previewSize = BIRD_W * 1.5;
+    for (let i = 0; i < previewBirds.length; i++) {
+      drawBirdByType(previewBirds[i], previewPositions[i], 270, previewSize, BIRD_H * 1.5, frame);
+    }
+
+    // Start button
+    const bx2 = 250, by2 = 370, bw2 = 300, bh2 = 70;
+    ctx.fillStyle = '#e05030'; ctx.fillRect(bx2, by2, bw2, bh2);
+    ctx.fillStyle = '#ff6040'; ctx.fillRect(bx2 + 3, by2 + 3, bw2 - 6, bh2 - 6);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 26px "Courier New"';
+    ctx.fillText('开始游戏', bx2 + bw2/2, by2 + 47);
+
+    const blink3 = Math.sin(frame * 0.06) > 0;
+    if (blink3) {
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Courier New"';
+      ctx.fillText('👆 点击上方按钮', W/2, 480);
+    }
+    ctx.fillStyle = '#888'; ctx.font = '13px "Courier New"';
+    ctx.fillText('选择你的角色与电脑对战', W/2, 520);
+    ctx.fillStyle = '#555'; ctx.font = '9px "Courier New"';
+    ctx.fillText('v2026.06.14', W/2, 545);
+  }
+
+  // Character Select
+  if (gameState === 'select') {
+    ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 30px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText('超级小鸟', W/2, 50);
+    ctx.fillStyle = '#fff'; ctx.font = '14px "Courier New"';
+    ctx.fillText('点击选择你的角色', W/2, 85);
+
+    const allBirds = getAllBirds();
+    const positions = [
+      { x: 80, y: 120 },   // 小蓝
+      { x: 420, y: 120 },  // 小绿
+      { x: 80, y: 280 },   // 小蓝莓
+      { x: 420, y: 280 }   // 小芒果
+    ];
+    const boxW = 170, boxH = 145;
+    const birdSz = BIRD_W * 1.3;
+
+    for (let i = 0; i < allBirds.length; i++) {
+      const b = allBirds[i];
+      const px = positions[i].x, py = positions[i].y;
+
+      let fill, stroke;
+      if (b.controller === 'p1') {
+        fill = 'rgba(255,200,0,0.4)'; stroke = '#ffcc00';
+      } else if (b.controller === 'p2') {
+        fill = 'rgba(255,100,100,0.4)'; stroke = '#ff4444';
+      } else {
+        fill = hexToRgba(b.color, 0.2);
+        stroke = b.color;
+      }
+
+      ctx.fillStyle = fill; ctx.fillRect(px, py, boxW, boxH);
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = b.controller !== 'ai' ? 4 : 2;
+      ctx.strokeRect(px, py, boxW, boxH);
+
+      drawBirdByType(b, px + boxW/2 - birdSz/2, py + 25, birdSz, BIRD_H * 1.3, frame);
+
+      ctx.fillStyle = stroke;
+      ctx.font = 'bold 18px "Courier New"';
+      ctx.fillText(b.name, px + boxW/2, py + 25 + BIRD_H * 1.3 + 22);
+    }
+
+    // Undo hint + countdown
+    ctx.fillStyle = '#888'; ctx.font = '12px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText('点击已选角色可取消重新选择', W/2, 445);
+    const remaining = Math.max(0, Math.ceil(selectTimer / 60));
+    ctx.fillStyle = remaining <= 1 ? '#ffdd00' : '#fff';
+    ctx.font = 'bold 15px "Courier New"';
+    ctx.fillText(`${remaining}秒后自动开始`, W/2, 475);
+
+  } else if (gameState === 'over') {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 32px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText('🏆', W/2, H/2 - 40);
+
+    if (winner) {
+      let winText, winColor;
+      if (winner.controller === 'p1') {
+        winText = '你赢了!'; winColor = '#ffdd00';
+      } else if (p1Bird && isCP(winner, p1Bird)) {
+        winText = 'CP赢了!'; winColor = '#44aaff';
+      } else {
+        winText = '对手赢了!'; winColor = '#ff4444';
+      }
+      ctx.fillStyle = winColor;
+      ctx.font = 'bold 28px "Courier New"';
+      ctx.fillText(winText, W/2, H/2 + 5);
+      ctx.fillStyle = winner.color;
+      ctx.font = 'bold 20px "Courier New"';
+      ctx.fillText(`${winner.name} 到达 ${Math.floor(winner.maxHeight/10)} 米`, W/2, H/2 + 45);
+    } else {
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 24px "Courier New"';
+      ctx.fillText('平局!', W/2, H/2 + 5);
+    }
+
+    const rbx = W/2 - 170, rby = H/2 + 70, rbw = 150, rbh = 55;
+    ctx.fillStyle = '#e05030'; ctx.fillRect(rbx, rby, rbw, rbh);
+    ctx.fillStyle = '#ff6040'; ctx.fillRect(rbx + 3, rby + 3, rbw - 6, rbh - 6);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 20px "Courier New"';
+    ctx.fillText('再来一局', rbx + rbw/2, rby + 37);
+
+    const hbx = W/2 + 20, hby = H/2 + 70, hbw = 150, hbh = 55;
+    ctx.fillStyle = '#3080e0'; ctx.fillRect(hbx, hby, hbw, hbh);
+    ctx.fillStyle = '#40a0ff'; ctx.fillRect(hbx + 3, hby + 3, hbw - 6, hbh - 6);
+    ctx.fillStyle = '#fff';
+    ctx.fillText('返回首页', hbx + hbw/2, hby + 37);
+  }
+}
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function gameLoop() {
+  try {
+    if (gameState === 'playing') update();
+    if (gameState === 'title' || gameState === 'select') frame++;
+    if (gameState === 'select') {
+      selectTimer--;
+      if (selectTimer <= 0) gameState = 'playing';
+    }
+    draw();
+  } catch (e) {
+    console.error('Game loop error:', e);
+  }
+  requestAnimationFrame(gameLoop);
+}
+
+resetGame();
+gameLoop();
+</script>
+</body>
+</html>

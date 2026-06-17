@@ -403,18 +403,23 @@ function initWorld() {
 
   generateWorld(280, -9600);
 
-  const pipePositions = [
-    { y: 380, targetY: -4540 },
-    { y: -4540, targetY: -9540 },
-    { y: -9540, targetY: -9580 }
-  ];
-  for (const pp of pipePositions) {
-    const platX = 100 + Math.random() * 300;
-    const platW = 200;
-    platforms.push({ x: platX, y: pp.y, w: platW, h: 16, type: 'brick' });
-    const pipeX = platX + platW / 2 - 16;
+  // Random pipe placement throughout the world
+  const pipeCount = 8;
+  // Pick random platforms to place pipes on
+  const pipeCandidates = platforms.filter(p => p.type !== 'ground').sort(() => Math.random() - 0.5).slice(0, pipeCount);
+  const pipePlats = pipeCandidates.sort((a, b) => a.y - b.y); // ascending y (higher in world first)
+  for (let i = 0; i < pipePlats.length; i++) {
+    const pp = pipePlats[i];
+    let targetY, targetX;
+    if (i + 1 < pipePlats.length) {
+      targetY = pipePlats[i + 1].y;
+      targetX = pipePlats[i + 1].x + pipePlats[i + 1].w / 2;
+    } else {
+      targetY = pp.y - 4000; targetX = 200 + Math.random() * 400;
+    }
+    const pipeX = pp.x + pp.w / 2 - 16;
     pipes.push({ x: pipeX, y: pp.y, w: 32, h: 40, warp: true,
-      targetX: 200 + Math.random() * 400, targetY: pp.targetY });
+      targetX, targetY });
   }
 }
 

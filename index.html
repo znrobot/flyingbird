@@ -1072,20 +1072,6 @@ canvas.addEventListener('click', e => {
         }
       }
     }
-    // Portal to next world button
-    const portalW1 = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT1(k); }) || localStorage.getItem('superBirdsWorld2Unlocked') === '1';
-    const portalW2 = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT2(k); }) || localStorage.getItem('superBirdsWorld3Unlocked') === '1';
-    if ((currentWorld === 1 && portalW1) || (currentWorld === 2 && portalW2)) {
-      const portalBtnW = 220, portalBtnH = 30, portalBtnX = W/2 - portalBtnW/2, portalBtnY = H - 100;
-      if (mx > portalBtnX && mx < portalBtnX + portalBtnW && my > portalBtnY && my < portalBtnY + portalBtnH) {
-        currentWorld = currentWorld === 1 ? 2 : 3;
-        initWorld();
-        grayBirdPlayer = false;
-        worldLoadingTimer = 90;
-        gameState = 'worldLoading';
-        return;
-      }
-    }
     // Back button
     const backW2 = 120, backH2 = 36, backX2 = W/2 - backW2/2, backY2 = H - 56;
     if (mx > backX2 && mx < backX2 + backW2 && my > backY2 && my < backY2 + backH2) {
@@ -2407,6 +2393,8 @@ function draw() {
     ctx.fillText(t('loading_text'), W/2, barY2 - 10);
 		ctx.fillStyle = '#555'; ctx.font = '9px "Courier New"';
 		ctx.fillText('v2026.06.14', W/2, H - 24);
+
+    return;
   }
 
   // Loading screen
@@ -3037,19 +3025,6 @@ function draw() {
     ctx.fillStyle = '#fff'; ctx.font = 'bold 16px "Courier New"'; ctx.textAlign = 'center';
     ctx.fillText(t('btn_back'), W/2, backY + 24);
 
-    // Portal to next world (when all birds unlocked in current world)
-    const portalW1 = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT1(k); }) || localStorage.getItem('superBirdsWorld2Unlocked') === '1';
-    const portalW2 = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT2(k); }) || localStorage.getItem('superBirdsWorld3Unlocked') === '1';
-    if ((currentWorld === 1 && portalW1) || (currentWorld === 2 && portalW2)) {
-      const portalBtnW = 220, portalBtnH = 30, portalBtnX = W/2 - portalBtnW/2, portalBtnY = H - 100;
-      const glow = 0.5 + Math.sin(frame * 0.06) * 0.3;
-      ctx.fillStyle = 'rgba(100,180,255,' + glow + ')'; ctx.fillRect(portalBtnX - 2, portalBtnY - 2, portalBtnW + 4, portalBtnH + 4);
-      ctx.fillStyle = '#2255aa'; ctx.fillRect(portalBtnX, portalBtnY, portalBtnW, portalBtnH);
-      ctx.fillStyle = '#4488cc'; ctx.fillRect(portalBtnX + 2, portalBtnY + 2, portalBtnW - 4, portalBtnH - 4);
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 13px "Courier New"';
-      const portalLabel = currentWorld === 1 ? t('portal_to_cny') : t('portal_to_midautumn');
-      ctx.fillText(portalLabel, W/2, portalBtnY + 20);
-    }
   }
 
   // World Select

@@ -509,7 +509,7 @@ let powerUp = null; // null | 'superFlight' | 'coinMagnet' | 'doubleTime' | 'sel
 let wheelSpinning = false, wheelAngle = 0, wheelSpeed = 0, wheelResult = -1, wheelResultTimer = 0;
 const WHEEL_PRIZES = [
   { label: 'wheel_p1', reward: 'newWorld', amount: 0, color: '#ffdd00' },
-  { label: 'wheel_p2', reward: 'gray', amount: 0, color: '#888888' },
+  { label: 'wheel_p2', reward: 'egg', amount: 0, color: '#ff66aa' },
   { label: 'wheel_p3', reward: 'coins', amount: 100, color: '#ff8800' },
   { label: 'wheel_p4', reward: 'unlockAny', amount: 0, color: '#44aaff' },
   { label: 'wheel_p5', reward: 'coins', amount: 10000, color: '#ff4444' },
@@ -520,44 +520,80 @@ let playCount = {};
 let totalCoins = parseInt(localStorage.getItem('superBirdsTotalCoins') || '0');
 let unlockCelebration = null; // { name, isGray, timer }
 let currentWorld = 1;
-const UNLOCK_PRICES = { '小蓝莓': 1000, '小绿': 2000, '小芒果': 3000, '白白': 4000, '蓝蓝': 5000, 'gray': 6000 };
-const UNLOCK_PRICES_W2 = { '小蓝莓': 7000, '小绿': 8000, '小芒果': 9000, '白白': 10000, '蓝蓝': 11000, 'gray': 12000 };
-const UNLOCK_PRICES_W3 = { '小蓝莓': 13000, '小绿': 14000, '小芒果': 15000, '白白': 16000, '蓝蓝': 17000, 'gray': 18000 };
-let unlockedBirds = new Set(JSON.parse(localStorage.getItem('superBirdsUnlocked') || '[]'));
-let unlockedBirdsW2 = new Set(JSON.parse(localStorage.getItem('superBirdsUnlockedW2') || '[]'));
-let unlockedBirdsW3 = new Set(JSON.parse(localStorage.getItem('superBirdsUnlockedW3') || '[]'));
+const WORLD_COUNT = 11;
+const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+// Per-world unlock prices (world index → prices object). Worlds 4+ use base + w*1000 formula.
+const WORLD_UNLOCK_PRICES = {
+  1: { '小蓝莓':1000, '小绿':2000, '小芒果':3000, '白白':4000, '蓝蓝':5000, 'gray':6000 },
+  2: { '小蓝莓':7000, '小绿':8000, '小芒果':9000, '白白':10000, '蓝蓝':11000, 'gray':12000 },
+  3: { '小蓝莓':13000, '小绿':14000, '小芒果':15000, '白白':16000, '蓝蓝':17000, 'gray':18000 },
+};
+for (let w = 4; w <= WORLD_COUNT; w++) {
+  WORLD_UNLOCK_PRICES[w] = { '小蓝莓':13000+(w-3)*1000, '小绿':14000+(w-3)*1000, '小芒果':15000+(w-3)*1000, '白白':16000+(w-3)*1000, '蓝蓝':17000+(w-3)*1000, 'gray':18000+(w-3)*1000 };
+}
+
+// Per-world bird speeds (exact values for W1-W3, +0.15 per world thereafter)
+const WORLD_BIRD_SPEEDS = {
+  1: { '小蓝':0.70, '小蓝莓':0.85, '小绿':1.00, '小芒果':1.20, '白白':1.40, '蓝蓝':1.60 },
+  2: { '小蓝':1.70, '小蓝莓':1.75, '小绿':1.80, '小芒果':1.85, '白白':1.90, '蓝蓝':1.95 },
+  3: { '小蓝':2.00, '小蓝莓':2.05, '小绿':2.10, '小芒果':2.15, '白白':2.20, '蓝蓝':2.25 },
+};
+for (let w = 4; w <= WORLD_COUNT; w++) {
+  WORLD_BIRD_SPEEDS[w] = {};
+  const birds = ['小蓝','小蓝莓','小绿','小芒果','白白','蓝蓝'];
+  for (const b of birds) { WORLD_BIRD_SPEEDS[w][b] = +(WORLD_BIRD_SPEEDS[3][b] + (w-3)*0.15).toFixed(2); }
+}
+
+// World holiday themes (matches drawParallaxBg / drawHolidayAccessory handling)
+const WORLD_HOLIDAYS = ['spring','cny','midautumn','yuanxiao','qingming','laba','dragonboat','qixi','guoqing','chongyang','dongzhi'];
+
+// Translation key suffix per world
+const WORLD_TKEY = ['normal','cny','midautumn','yuanxiao','qingming','laba','dragonboat','qixi','guoqing','chongyang','dongzhi'];
+
+// unlockSets[worldIndex-1] = Set of unlocked bird names for that world
+let unlockSets = [];
+for (let w = 1; w <= WORLD_COUNT; w++) {
+  let val;
+  if (w === 1 && localStorage.getItem('superBirdsUnlocked')) {
+    // Migrate old W1 key
+    val = localStorage.getItem('superBirdsUnlocked');
+    localStorage.setItem('superBirdsUnlockedW1', val);
+    localStorage.removeItem('superBirdsUnlocked');
+  } else {
+    val = localStorage.getItem('superBirdsUnlockedW' + w);
+  }
+  unlockSets.push(new Set(val ? JSON.parse(val) : []));
+}
+
 function isLocked(name) {
-  if (currentWorld === 3) {
-    if (name === '小蓝') return false;
-    return UNLOCK_PRICES_W3[name] && !unlockedBirdsW3.has(name);
-  }
-  if (currentWorld === 2) {
-    if (name === '小蓝') return false;
-    return UNLOCK_PRICES_W2[name] && !unlockedBirdsW2.has(name);
-  }
-  return UNLOCK_PRICES[name] && !unlockedBirds.has(name);
+  if (name === '小蓝') return false;
+  const wp = WORLD_UNLOCK_PRICES[currentWorld];
+  return wp && wp[name] && !unlockSets[currentWorld-1].has(name);
 }
-function isLockedT1(name) { return UNLOCK_PRICES[name] && !unlockedBirds.has(name); }
-function isLockedT2(name) { return UNLOCK_PRICES_W2[name] && !unlockedBirdsW2.has(name); }
+function isLockedInWorld(worldNum, name) {
+  if (name === '小蓝') return false;
+  const wp = WORLD_UNLOCK_PRICES[worldNum];
+  return wp && wp[name] && !unlockSets[worldNum-1].has(name);
+}
 function unlockPrice(name) {
-  if (currentWorld === 3) return UNLOCK_PRICES_W3[name];
-  if (currentWorld === 2) return UNLOCK_PRICES_W2[name];
-  return UNLOCK_PRICES[name];
+  const wp = WORLD_UNLOCK_PRICES[currentWorld];
+  return (wp && wp[name]) || 999999;
 }
-function unlockSet() {
-  if (currentWorld === 3) return unlockedBirdsW3;
-  if (currentWorld === 2) return unlockedBirdsW2;
-  return unlockedBirds;
-}
-function unlockStorageKey() {
-  if (currentWorld === 3) return 'superBirdsUnlockedW3';
-  if (currentWorld === 2) return 'superBirdsUnlockedW2';
-  return 'superBirdsUnlocked';
+function unlockSet() { return unlockSets[currentWorld-1]; }
+function unlockStorageKey() { return 'superBirdsUnlockedW' + currentWorld; }
+function isWorldUnlocked(worldNum) {
+  if (worldNum <= 1) return true;
+  const prev = worldNum - 1;
+  const birds = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'];
+  return birds.every(function(k) { return !isLockedInWorld(prev, k); }) || localStorage.getItem('superBirdsWorld' + worldNum + 'Unlocked') === '1';
 }
 
 // Language
 let lang = 'zh';
 let showRules = false; // false | 'bird' | 'text'
+let showMusicPopup = false;
+let musicState = null; // null | 'on' | 'off'
 let spectateBird = null, spectateTimer = 0;
 let rulesBirdFrame = 0;
 const TXT = {
@@ -583,16 +619,23 @@ const TXT = {
     bubble_line2: '看我把规则偷走。',
     rules_title: '🎮 游戏规则',
     loading_title: '超级小鸟',
-    portal_to_cny: '🌀 传送门 → 春节世界', portal_to_midautumn: '🌀 传送门 → 中秋世界', portal_label: '🌀 传送门',
-    hud_world_cny: '🧨 春节世界 ', hud_world_normal: '🌍 普通世界 ', hud_world_midautumn: '🌕 中秋世界 ',
-    title_world_cny: '🔥 春节世界', title_world_normal: '🌍 普通世界', title_world_midautumn: '🌕 中秋世界',
+    portal_label: '🌀 传送门',
+    hud_world_normal: '🌍 普通世界 ', hud_world_cny: '🧨 春节世界 ', hud_world_midautumn: '🌕 中秋世界 ',
+    hud_world_yuanxiao: '🏮 元宵世界 ', hud_world_qingming: '🌿 清明世界 ', hud_world_laba: '🥣 腊八世界 ',
+    hud_world_dragonboat: '🐉 端午世界 ', hud_world_qixi: '✨ 七夕世界 ', hud_world_guoqing: '🇨🇳 国庆世界 ',
+    hud_world_chongyang: '🌼 重阳世界 ', hud_world_dongzhi: '🥟 冬至世界 ',
+    title_world_normal: '🌍 普通世界', title_world_cny: '🔥 春节世界', title_world_midautumn: '🌕 中秋世界',
+    title_world_yuanxiao: '🏮 元宵世界', title_world_qingming: '🌿 清明世界', title_world_laba: '🥣 腊八世界',
+    title_world_dragonboat: '🐉 端午世界', title_world_qixi: '✨ 七夕世界', title_world_guoqing: '🇨🇳 国庆世界',
+    title_world_chongyang: '🌼 重阳世界', title_world_dongzhi: '🥟 冬至世界',
     lang_toggle: 'EN',
-    btn_shop: '🛒 购买', btn_warp: '🌐 传送', btn_wheel: '🎡 转盘',
+    btn_shop: '🛒 购买', btn_warp: '🌐 传送', btn_wheel: '🎡 转盘', btn_music: '🎵 音乐',
+    music_coming_soon: '正在创造中，敬请等待！ 🎶',
     label_total_coins: '💰 累计金币: ',
     btn_refresh: '🔄 更新游戏',
     wheel_title: '🎡 幸运转盘', wheel_spin: '🎰 开始转动', wheel_back: '返回',
-    wheel_p1: '进入新世界', wheel_p2: '小灰皮肤', wheel_p3: '100金币', wheel_p4: '解锁皮肤权', wheel_p5: '10000金币',
-    wheel_win: '🎉 恭喜获得: ', wheel_countdown: '秒后回到转盘',
+    wheel_p1: '进入新世界', wheel_p2: '小鸟蛋', wheel_p3: '100金币', wheel_p4: '解锁皮肤权', wheel_p5: '10000金币',
+    wheel_win: '🎉 恭喜获得: ', wheel_countdown: '秒后可再次转动',
     unlock_get: '🎉 你已获得',
     shop_title: '🛒 角色商店', shop_balance: '💰 余额: ', shop_coins_unit: ' 金币',
     shop_unlocked: '✅ 已解锁', shop_buy_hint: '点击购买',
@@ -602,7 +645,14 @@ const TXT = {
     world_current: '● 当前', world_locked: '已锁定',
     win_bonus: ' 💰 奖励金币',
     world_normal_name: '🌍 普通世界', world_cny_name: '🧨 春节世界', world_midautumn_name: '🌕 中秋世界',
+    world_yuanxiao_name: '🏮 元宵世界', world_qingming_name: '🌿 清明世界', world_laba_name: '🥣 腊八世界',
+    world_dragonboat_name: '🐉 端午世界', world_qixi_name: '✨ 七夕世界', world_guoqing_name: '🇨🇳 国庆世界',
+    world_chongyang_name: '🌼 重阳世界', world_dongzhi_name: '🥟 冬至世界',
     world_normal_desc: '随季节变化的经典世界', world_cny_desc: '红红火火的春节主题', world_midautumn_desc: '月圆人团圆的中秋佳节',
+    world_yuanxiao_desc: '花灯璀璨的元宵佳节', world_qingming_desc: '踏青祭祖的清明时节',
+    world_laba_desc: '喝腊八粥迎新春的传统节日', world_dragonboat_desc: '龙舟竞渡的端午主题',
+    world_qixi_desc: '牛郎织女相会的浪漫星河', world_guoqing_desc: '普天同庆的国庆主题',
+    world_chongyang_desc: '登高赏菊的重阳主题', world_dongzhi_desc: '瑞雪纷飞的冬至主题',
     rules_text: [
       '六大角色比拼谁先飞到1000米高空!',
       '方向键: ↑←↓→ 移动跳跃',
@@ -630,6 +680,7 @@ const TXT = {
       '选择全部道具后可按D损坏台阶/F损坏水管/G损坏云朵',
       '游戏开始后屏幕中间上方按钮可重新开始或返回首页',
       '游戏结束后屏幕中间按钮可重新开始或返回首页',
+      '首页🎵音乐键：点击后选择"开"播放超级小鸟主题曲，"关"停止播放',
     ],
   },
   en: {
@@ -654,16 +705,23 @@ const TXT = {
     bubble_line2: 'I will steal the rules away!',
     rules_title: 'How to Play',
     loading_title: 'Super Birds',
-    portal_to_cny: '🌀 Portal → CNY World', portal_to_midautumn: '🌀 Portal → Mid-Autumn', portal_label: '🌀 Portal',
-    hud_world_cny: '🧨 CNY World ', hud_world_normal: '🌍 Normal World ', hud_world_midautumn: '🌕 Mid-Autumn ',
-    title_world_cny: '🔥 CNY World', title_world_normal: '🌍 Normal World', title_world_midautumn: '🌕 Mid-Autumn',
+    portal_label: '🌀 Portal',
+    hud_world_normal: '🌍 Normal World ', hud_world_cny: '🧨 CNY World ', hud_world_midautumn: '🌕 Mid-Autumn ',
+    hud_world_yuanxiao: '🏮 Lantern ', hud_world_qingming: '🌿 Qingming ', hud_world_laba: '🥣 Laba ',
+    hud_world_dragonboat: '🐉 Dragon Boat ', hud_world_qixi: '✨ Qixi ', hud_world_guoqing: '🇨🇳 National Day ',
+    hud_world_chongyang: '🌼 Chongyang ', hud_world_dongzhi: '🥟 Dongzhi ',
+    title_world_normal: '🌍 Normal World', title_world_cny: '🔥 CNY World', title_world_midautumn: '🌕 Mid-Autumn',
+    title_world_yuanxiao: '🏮 Lantern Festival', title_world_qingming: '🌿 Qingming', title_world_laba: '🥣 Laba Festival',
+    title_world_dragonboat: '🐉 Dragon Boat', title_world_qixi: '✨ Qixi', title_world_guoqing: '🇨🇳 National Day',
+    title_world_chongyang: '🌼 Chongyang', title_world_dongzhi: '🥟 Dongzhi',
     lang_toggle: '中文',
-    btn_shop: '🛒 Shop', btn_warp: '🌐 Warp', btn_wheel: '🎡 Wheel',
+    btn_shop: '🛒 Shop', btn_warp: '🌐 Warp', btn_wheel: '🎡 Wheel', btn_music: '🎵 Music',
+    music_coming_soon: 'Working on it, please wait 🎶',
     label_total_coins: '💰 Total Coins: ',
     btn_refresh: '🔄 Refresh',
     wheel_title: '🎡 Lucky Wheel', wheel_spin: '🎰 Spin', wheel_back: 'Back',
-    wheel_p1: 'New World', wheel_p2: 'Gray Bird', wheel_p3: '100 Coins', wheel_p4: 'Unlock Any Bird', wheel_p5: '10000 Coins',
-    wheel_win: '🎉 You won: ', wheel_countdown: 's to return',
+    wheel_p1: 'New World', wheel_p2: 'Bird Egg', wheel_p3: '100 Coins', wheel_p4: 'Unlock Any Bird', wheel_p5: '10000 Coins',
+    wheel_win: '🎉 You won: ', wheel_countdown: 's until next spin',
     unlock_get: '🎉 You Unlocked',
     shop_title: '🛒 Bird Shop', shop_balance: '💰 Balance: ', shop_coins_unit: ' Coins',
     shop_unlocked: '✅ Unlocked', shop_buy_hint: 'Click to Buy',
@@ -673,7 +731,14 @@ const TXT = {
     world_current: '● Current', world_locked: 'Locked',
     win_bonus: ' 💰 Bonus Coins',
     world_normal_name: '🌍 Normal World', world_cny_name: '🧨 CNY World', world_midautumn_name: '🌕 Mid-Autumn',
+    world_yuanxiao_name: '🏮 Lantern Festival', world_qingming_name: '🌿 Qingming', world_laba_name: '🥣 Laba Festival',
+    world_dragonboat_name: '🐉 Dragon Boat', world_qixi_name: '✨ Qixi', world_guoqing_name: '🇨🇳 National Day',
+    world_chongyang_name: '🌼 Chongyang', world_dongzhi_name: '🥟 Dongzhi',
     world_normal_desc: 'Classic seasonal world', world_cny_desc: 'Festive Lunar New Year', world_midautumn_desc: 'Moon festival with lanterns',
+    world_yuanxiao_desc: 'Lantern-lit festive celebration', world_qingming_desc: 'Spring tomb sweeping tradition',
+    world_laba_desc: 'Porridge festival welcoming new year', world_dragonboat_desc: 'Dragon boat racing festival',
+    world_qixi_desc: 'Starry lovers romance theme', world_guoqing_desc: 'National Day celebration',
+    world_chongyang_desc: 'Chrysanthemum climbing festival', world_dongzhi_desc: 'Snowy winter solstice',
     rules_text: [
       'Six birds race to 1000m!',
       'Arrow keys: ↑←↓→ to move & jump',
@@ -699,6 +764,7 @@ const TXT = {
       'Select All: Press D/F/G to damage platforms/pipes/clouds',
       'Top-center buttons during game: Restart or Home',
       'Game over screen: center buttons to restart or go home',
+      '🎵 Music button on title: click "开"(On) to play theme song, "关"(Off) to stop',
     ],
   }
 };
@@ -714,34 +780,12 @@ const BIRD_TRAITS = {
   '蓝蓝':   { spd: 1.6, jmp: 0.95, grav: 1.05, fric: 0.6, drift: 0.85, hop: 0.015 },
 };
 
-const BIRD_TRAITS_W2 = {
-  '小蓝':   { spd: 1.7, jmp: 1, grav: 1, fric: 0.8, drift: 0.3, hop: 0.02 },
-  '小蓝莓': { spd: 1.75, jmp: 0.85, grav: 1, fric: 0.85, drift: 0.5, hop: 0.04 },
-  '小绿':   { spd: 1.8, jmp: 1.2, grav: 0.9, fric: 0.8, drift: 0.1, hop: 0.01 },
-  '小芒果': { spd: 1.85, jmp: 0.9, grav: 1.15, fric: 0.7, drift: 0.7, hop: 0.05 },
-  '白白':   { spd: 1.9, jmp: 1.1, grav: 0.8, fric: 0.9, drift: -0.2, hop: 0.03 },
-  '蓝蓝':   { spd: 1.95, jmp: 0.95, grav: 1.05, fric: 0.6, drift: 0.85, hop: 0.015 },
-};
-
-const BIRD_TRAITS_W3 = {
-  '小蓝':   { spd: 2.0, jmp: 1, grav: 1, fric: 0.8, drift: 0.3, hop: 0.02 },
-  '小蓝莓': { spd: 2.05, jmp: 0.85, grav: 1, fric: 0.85, drift: 0.5, hop: 0.04 },
-  '小绿':   { spd: 2.1, jmp: 1.2, grav: 0.9, fric: 0.8, drift: 0.1, hop: 0.01 },
-  '小芒果': { spd: 2.15, jmp: 0.9, grav: 1.15, fric: 0.7, drift: 0.7, hop: 0.05 },
-  '白白':   { spd: 2.2, jmp: 1.1, grav: 0.8, fric: 0.9, drift: -0.2, hop: 0.03 },
-  '蓝蓝':   { spd: 2.25, jmp: 0.95, grav: 1.05, fric: 0.6, drift: 0.85, hop: 0.015 },
-};
-
 function getTraits(name) {
-  if (currentWorld === 3) {
-    if (name === '小蓝' || unlockedBirdsW3.has(name)) return BIRD_TRAITS_W3[name] || BIRD_TRAITS[name];
-    return BIRD_TRAITS[name];
-  }
-  if (currentWorld === 2) {
-    if (name === '小蓝' || unlockedBirdsW2.has(name)) return BIRD_TRAITS_W2[name] || BIRD_TRAITS[name];
-    return BIRD_TRAITS[name];
-  }
-  return BIRD_TRAITS[name];
+  const base = BIRD_TRAITS[name];
+  if (!base) return BIRD_TRAITS['小蓝'];
+  const speeds = WORLD_BIRD_SPEEDS[currentWorld];
+  const spd = (speeds && speeds[name]) ? speeds[name] : base.spd;
+  return { spd: spd, jmp: base.jmp, grav: base.grav, fric: base.fric, drift: base.drift, hop: base.hop };
 }
 
 function makeBird(x, name, color, ctrl, traits) {
@@ -772,14 +816,13 @@ let grayBird = null, grayBirdRespawn = 0; // the rules-stealing troublemaker
 let grayBirdPlayer = false; // player chose gray bird in selection
 let worldLoadingTimer = 0;
 let portalSpinTimer = 0, portalNextWorld = 0, portalBirdName = null, portalBirdColor = null;
+let worldSelectPage = 0;
 
 function spawnGrayBird() {
-  var gspd = 1.8;
-  if (currentWorld === 3) {
-    gspd = (unlockedBirdsW3.has('gray')) ? 2.5 : 2.0;
-  } else if (currentWorld === 2) {
-    gspd = (unlockedBirdsW2.has('gray')) ? 2.0 : 1.65;
-  }
+  const graySpeeds = { 1: { locked: 1.8, unlocked: 1.8 }, 2: { locked: 1.65, unlocked: 2.0 }, 3: { locked: 2.0, unlocked: 2.5 } };
+  let gspd = 1.8 + (currentWorld - 1) * 0.2;
+  const gcfg = graySpeeds[currentWorld];
+  if (gcfg) { gspd = unlockSets[currentWorld-1].has('gray') ? gcfg.unlocked : gcfg.locked; }
   grayBird = { x: -60, y: cameraY + H * 0.4, vx: 2, vy: 0, wingFrame: 0, maxHeight: 0, coins: 0, onGround: false, spd: gspd, jmp: 1, grav: 1, fric: 0.8 };
 }
 
@@ -838,12 +881,12 @@ function damageNearestPipe() {
 function damageNearestCloud() {
   if (!grayBird) return;
   let best = null, bestDist = Infinity;
-  for (const c of clouds) {
-    if (c.damaged) continue;
-    const dx = (c.x + c.w/2) - grayBird.x;
-    const dy = c.y - grayBird.y;
+  for (const p of platforms) {
+    if (p.type !== 'cloud' || p.damaged) continue;
+    const dx = (p.x + p.w/2) - grayBird.x;
+    const dy = p.y - grayBird.y;
     const dist = Math.abs(dx) + Math.abs(dy);
-    if (dist < bestDist && dist < 300) { bestDist = dist; best = c; }
+    if (dist < bestDist && dist < 300) { bestDist = dist; best = p; }
   }
   if (best) best.damaged = true;
 }
@@ -864,7 +907,7 @@ function updateGrayBird() {
     gb.y += gb.vy;
     if (gb.x < -20) gb.x = -20;
     if (gb.x > W + 20) gb.x = W + 20;
-    const goalClamp2 = currentWorld === 3 ? -29540 : currentWorld === 2 ? -19540 : -9540;
+    const goalClamp2 = 460 - currentWorld * 10000;
     if (gb.y < goalClamp2) gb.y = goalClamp2;
     if (gb.y > 500) gb.y = 500;
     const gh = 460 - gb.y;
@@ -955,7 +998,7 @@ function updateGrayBird() {
   // World bounds
   if (gb.x < -60) gb.x = -60;
   if (gb.x > W + 60) gb.x = W + 60;
-  const goalClamp = (currentWorld === 3 ? -29540 : currentWorld === 2 ? -19540 : -9540);
+  const goalClamp = 460 - currentWorld * 10000;
   if (gb.y < goalClamp) gb.y = goalClamp;
   if (gb.y > 500) gb.y = 500;
 }
@@ -976,6 +1019,66 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; e.preventDefault(); });
 
+// Virtual D-Pad helpers
+function getDPadButtons() {
+  const dpCX = 84, dpCY = H - 270, dpS = 52, dpG = 2;
+  return [
+    { key: 'ArrowUp',    x: dpCX - dpS/2, y: dpCY - dpS - dpG },
+    { key: 'ArrowDown',  x: dpCX - dpS/2, y: dpCY + dpG },
+    { key: 'ArrowLeft',  x: dpCX - dpS - dpG - dpS/2, y: dpCY - dpS/2 },
+    { key: 'ArrowRight', x: dpCX + dpG + dpS/2, y: dpCY - dpS/2 },
+  ];
+}
+let dPadActive = {}; // tracks which virtual buttons are pressed by pointer ID
+
+function hitDPad(mx, my) {
+  if (!isMobile || gameState !== 'playing') return null;
+  const dpS = 52;
+  const btns = getDPadButtons();
+  for (const btn of btns) {
+    if (mx > btn.x && mx < btn.x + dpS && my > btn.y && my < btn.y + dpS) return btn.key;
+  }
+  // Also check damage buttons (when gray bird player)
+  if (grayBirdPlayer) {
+    const dmX = W - 58, dmW = 40, dmH = 22;
+    if (mx > dmX && mx < dmX + dmW && my > H - 124 && my < H - 124 + dmH) return 'KeyD';
+    if (mx > dmX && mx < dmX + dmW && my > H - 96 && my < H - 96 + dmH) return 'KeyF';
+    if (mx > dmX && mx < dmX + dmW && my > H - 68 && my < H - 68 + dmH) return 'KeyG';
+  }
+  return null;
+}
+
+canvas.addEventListener('pointerdown', function(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const key = hitDPad(mx, my);
+  if (key) {
+    if (key === 'KeyD') { damageNearestPlatform(); e.preventDefault(); return; }
+    if (key === 'KeyF') { damageNearestPipe(); e.preventDefault(); return; }
+    if (key === 'KeyG') { damageNearestCloud(); e.preventDefault(); return; }
+    keys[key] = true;
+    dPadActive[e.pointerId] = key;
+    e.preventDefault();
+  }
+});
+canvas.addEventListener('pointerup', function(e) {
+  const key = dPadActive[e.pointerId];
+  if (key) { keys[key] = false; delete dPadActive[e.pointerId]; e.preventDefault(); }
+});
+canvas.addEventListener('pointerleave', function(e) {
+  for (const id in dPadActive) { keys[dPadActive[id]] = false; }
+  dPadActive = {};
+});
+canvas.addEventListener('pointermove', function(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const oldKey = dPadActive[e.pointerId];
+  const newKey = hitDPad(mx, my);
+  if (oldKey && oldKey !== newKey) { keys[oldKey] = false; delete dPadActive[e.pointerId]; }
+  if (newKey && newKey !== oldKey) { keys[newKey] = true; dPadActive[e.pointerId] = newKey; e.preventDefault(); }
+});
+canvas.style.touchAction = 'none'; // prevent browser gestures on canvas
+
 // Mouse click handler
 canvas.addEventListener('click', e => {
   const rect = canvas.getBoundingClientRect();
@@ -984,11 +1087,21 @@ canvas.addEventListener('click', e => {
 
   // In-game buttons
   if (gameState === 'playing') {
-    // Gray bird damage buttons
-    if (grayBirdPlayer) {
-      if (mx > W - 168 && mx < W - 118 && my > 306 && my < 330) { damageNearestPlatform(); return; }
-      if (mx > W - 114 && mx < W - 64 && my > 306 && my < 330) { damageNearestPipe(); return; }
-      if (mx > W - 60 && mx < W - 10 && my > 306 && my < 330) { damageNearestCloud(); return; }
+    // Gray bird damage buttons (right side, same rows as D-Pad) — mobile only
+    if (isMobile && grayBirdPlayer) {
+      const dmX = W - 58, dmW = 40, dmH = 22;
+      const dmBtns = [
+        { key: 'D', label: t('btn_damage'), color: '#cc4400', x: dmX, y: H - 124 },
+        { key: 'F', label: t('btn_damage_pipe'), color: '#aa3300', x: dmX, y: H - 96 },
+        { key: 'G', label: t('btn_damage_cloud'), color: '#886600', x: dmX, y: H - 68 },
+      ];
+      for (const btn of dmBtns) {
+        if (mx > btn.x && mx < btn.x + dmW && my > btn.y && my < btn.y + dmH) {
+          if (btn.key === 'D') { damageNearestPlatform(); return; }
+          if (btn.key === 'F') { damageNearestPipe(); return; }
+          if (btn.key === 'G') { damageNearestCloud(); return; }
+        }
+      }
     }
     const btnW = 75, btnH = 18, btnY = 90, gap = 6;
     if (mx > W/2 - btnW - gap && mx < W/2 - gap && my > btnY && my < btnY + btnH) {
@@ -1016,21 +1129,26 @@ canvas.addEventListener('click', e => {
   // World select screen
   if (gameState === 'worldSelect') {
     const wsW = 240, wsH = 200, wsGap = 15;
-    const wsTotalW = wsW * 3 + wsGap * 2;
-    const wsStartX = W/2 - wsTotalW / 2;
-    for (let i = 0; i < 3; i++) {
-      const wx = wsStartX + i * (wsW + wsGap), wy = 90;
+    const wsCols = 3;
+    const cardsPerPage = 6;
+    const totalPages = Math.ceil(WORLD_COUNT / cardsPerPage);
+    const startIdx = worldSelectPage * cardsPerPage;
+    const pageWorlds = [];
+    for (let w = 1; w <= WORLD_COUNT; w++) pageWorlds.push(w);
+    const shownWorlds = pageWorlds.slice(startIdx, startIdx + cardsPerPage);
+    const wsRows = Math.ceil(shownWorlds.length / wsCols);
+    const wsGridW = wsW * Math.min(wsCols, shownWorlds.length) + wsGap * (Math.min(wsCols, shownWorlds.length) - 1);
+    const wsStartX = W/2 - wsGridW / 2;
+    const wsStartY = 80;
+
+    for (let i = 0; i < shownWorlds.length; i++) {
+      const wId = shownWorlds[i];
+      const col = i % wsCols, row = Math.floor(i / wsCols);
+      const wx = wsStartX + col * (wsW + wsGap), wy = wsStartY + row * (wsH + wsGap);
       if (mx > wx && mx < wx + wsW && my > wy && my < wy + wsH) {
-        if (i === 1) {
-          const allUnlockedWS = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT1(k); }) || localStorage.getItem('superBirdsWorld2Unlocked') === '1';
-          if (!allUnlockedWS) return;
-        }
-        if (i === 2) {
-          const allW2Unlocked = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT2(k); }) || localStorage.getItem('superBirdsWorld3Unlocked') === '1';
-          if (!allW2Unlocked) return;
-        }
-        if (currentWorld !== i + 1) {
-          currentWorld = i + 1;
+        if (!isWorldUnlocked(wId)) return;
+        if (currentWorld !== wId) {
+          currentWorld = wId;
           initWorld();
           grayBirdPlayer = false;
           worldLoadingTimer = 90;
@@ -1038,6 +1156,17 @@ canvas.addEventListener('click', e => {
         }
         return;
       }
+    }
+    // Page navigation
+    const navY = wsStartY + wsRows * (wsH + wsGap) + 10;
+    const navBtnW = 40, navBtnH = 30;
+    if (worldSelectPage > 0) {
+      const lx = W/2 - 60, ly = navY;
+      if (mx > lx && mx < lx + navBtnW && my > ly && my < ly + navBtnH) { worldSelectPage--; return; }
+    }
+    if (startIdx + cardsPerPage < WORLD_COUNT) {
+      const rx = W/2 + 20, ry = navY;
+      if (mx > rx && mx < rx + navBtnW && my > ry && my < ry + navBtnH) { worldSelectPage++; return; }
     }
     const wsbbW = 120, wsbbH = 36, wsbbX = W/2 - wsbbW/2, wsbbY = H - 56;
     if (mx > wsbbX && mx < wsbbX + wsbbW && my > wsbbY && my < wsbbY + wsbbH) {
@@ -1092,7 +1221,7 @@ canvas.addEventListener('click', e => {
     if (!wheelSpinning && wheelResult < 0) {
       const sbW = 210, sbH = 44, sbX = W/2 - sbW/2, sbY = 400;
       if (mx > sbX && mx < sbX + sbW && my > sbY && my < sbY + sbH) {
-        const wheelCost = currentWorld === 3 ? 300 : currentWorld === 2 ? 200 : 100;
+        const wheelCost = currentWorld * 100;
         if (totalCoins >= wheelCost) {
           totalCoins -= wheelCost;
           localStorage.setItem('superBirdsTotalCoins', totalCoins);
@@ -1109,6 +1238,17 @@ canvas.addEventListener('click', e => {
 
   // Title screen
   if (gameState === 'title') {
+    // Music popup — click outside circles to close
+    if (showMusicPopup) {
+      const mcr = 56, mcg = 60, mcY = H/2 - 20;
+      const mcOnX = W/2 - mcg - mcr, mcOffX = W/2 + mcg + mcr;
+      const distOn = Math.sqrt((mx - mcOnX) ** 2 + (my - mcY) ** 2);
+      const distOff = Math.sqrt((mx - mcOffX) ** 2 + (my - mcY) ** 2);
+      if (distOn <= mcr) { musicState = 'on'; return; }
+      if (distOff <= mcr) { musicState = 'off'; return; }
+      showMusicPopup = false;
+      return;
+    }
     // Rules overlay
     if (showRules === 'bird') {
       // Click paper → read rules
@@ -1127,7 +1267,7 @@ canvas.addEventListener('click', e => {
       showRules = false; return;
     }
     const topBtnW2 = 58, topBtnH2 = 26, topBtnGap2 = 3;
-    const topTotalW2 = topBtnW2 * 5 + topBtnGap2 * 4;
+    const topTotalW2 = topBtnW2 * 6 + topBtnGap2 * 5;
     const topBtnStartX2 = W/2 - topTotalW2 / 2;
     const topBtnX2 = function(i) { return topBtnStartX2 + (topBtnW2 + topBtnGap2) * i; };
     const topBtnY2 = 192;
@@ -1147,14 +1287,18 @@ canvas.addEventListener('click', e => {
     if (mx > topBtnX2(3) && mx < topBtnX2(3) + topBtnW2 && my > topBtnY2 && my < topBtnY2 + topBtnH2) {
       gameState = 'shop'; return;
     }
-    // Warp World (4)
+    // Music (4)
     if (mx > topBtnX2(4) && mx < topBtnX2(4) + topBtnW2 && my > topBtnY2 && my < topBtnY2 + topBtnH2) {
-      gameState = 'worldSelect';
+      showMusicPopup = true; return;
+    }
+    // Warp World (5)
+    if (mx > topBtnX2(5) && mx < topBtnX2(5) + topBtnW2 && my > topBtnY2 && my < topBtnY2 + topBtnH2) {
+      gameState = 'worldSelect'; worldSelectPage = 0;
       return;
     }
     // Refresh button
     if (mx > 362 && mx < 441 && my > 310 && my < 338) {
-      location.reload(); return;
+      location.replace(location.href.split('?')[0] + '?v=' + Date.now()); return;
     }
     // Start button
     if (mx > 250 && mx < 550 && my > 370 && my < 440) {
@@ -1416,11 +1560,11 @@ function initWorld() {
   platforms.push({ x: 60, y: 380, w: 300, h: 16, type: 'brick' });
   platforms.push({ x: 420, y: 380, w: 300, h: 16, type: 'brick' });
   platforms.push({ x: 180, y: 290, w: 400, h: 16, type: 'mystery' });
-  const goalY = (currentWorld === 3 ? 30000 : currentWorld === 2 ? 20000 : 10000);
+  const goalY = currentWorld * 10000;
   // Goal platform
   platforms.push({ x: W/2 - 150, y: 460 - goalY, w: 300, h: 16, type: 'goal' });
 
-  // Extra starting steps for world 2 and 3
+  // Extra starting steps for world 2+
   if (currentWorld >= 2) {
     platforms.push({ x: 50, y: 190, w: 200, h: 16, type: 'brick' });
     platforms.push({ x: 380, y: 190, w: 200, h: 16, type: 'brick' });
@@ -1465,7 +1609,7 @@ function updateBird(bird, ctrl) {
   else bird.vx *= (bird.fric || 0.8);
 
   // SuperFlight: p1 bird flies freely
-  if (hasSuperFlight && bird.controller === 'p1') {
+  if (hasSuperFlight && (bird.controller === 'p1' || (grayBirdPlayer && bird === grayBird))) {
     bird.vy = 0;
     if (ctrl.jump) bird.vy = -MOVE_SPEED * 1.5;
     else if (ctrl.down) bird.vy = MOVE_SPEED * 1.5;
@@ -1669,29 +1813,19 @@ function update() {
   }
 
   // Win condition: reach goal height
-  const goal = (currentWorld === 3 ? 30000 : currentWorld === 2 ? 20000 : 10000);
+  const goal = currentWorld * 10000;
   const allRacers = grayBird ? [...getAllBirds(), grayBird] : getAllBirds();
   for (const b of allRacers) {
     if (b.maxHeight >= goal) {
-      const allUnlockedW1 = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT1(k); });
-      const allUnlockedW2 = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT2(k); }) || localStorage.getItem('superBirdsWorld3Unlocked') === '1';
-      if (currentWorld === 1 && allUnlockedW1) {
-        // Portal: award coins + spin into world 2
-        totalCoins += 100;
+      if (currentWorld < WORLD_COUNT && isWorldUnlocked(currentWorld + 1)) {
+        // Portal to next world
+        totalCoins += currentWorld * 100;
         localStorage.setItem('superBirdsTotalCoins', totalCoins);
-        portalNextWorld = 2;
+        portalNextWorld = currentWorld + 1;
         portalBirdName = b.name;
         portalBirdColor = b.color;
-        portalSpinTimer = 90;
-        gameState = 'portalSpin';
-      } else if (currentWorld === 2 && allUnlockedW2) {
-        // Portal: award coins + spin into world 3
-        totalCoins += 100;
-        localStorage.setItem('superBirdsTotalCoins', totalCoins);
-        portalNextWorld = 3;
-        portalBirdName = b.name;
-        portalBirdColor = b.color;
-        portalSpinTimer = 90;
+        // Spin duration: W1→W2 = 90, W2→W3 = 150, rest = 90
+        portalSpinTimer = (currentWorld === 1) ? 90 : (currentWorld === 2) ? 150 : 90;
         gameState = 'portalSpin';
       } else {
         gameState = 'over';
@@ -1746,7 +1880,7 @@ function update() {
     for (const b of coinBirds) {
       if (b.x + BIRD_W > c.x - c.r && b.x < c.x + c.r &&
           b.y + BIRD_H > c.y - c.r && b.y < c.y + c.r) {
-        c.collected = true; b.coins++; if (b === p1Bird) { totalCoins++; localStorage.setItem('superBirdsTotalCoins', totalCoins); } coinDing(); break;
+        c.collected = true; b.coins++; if (b === p1Bird || (grayBirdPlayer && b === grayBird)) { totalCoins++; localStorage.setItem('superBirdsTotalCoins', totalCoins); } coinDing(); break;
       }
     }
   }
@@ -1767,11 +1901,11 @@ function update() {
   const minWorldY = cameraY - 600;
   const lowestPlatform = platforms.reduce((min, p) => Math.min(min, p.y), Infinity);
   if (lowestPlatform > minWorldY + 200) {
-    generateWorld(lowestPlatform - PLATFORM_SPACING, Math.max(minWorldY, (currentWorld === 3 ? -29540 : currentWorld === 2 ? -19540 : -9540)));
+    generateWorld(lowestPlatform - PLATFORM_SPACING, Math.max(minWorldY, 460 - currentWorld * 10000));
   }
 
   // Platforms never disappear — only trim if memory cap exceeded
-  const maxPlatforms = currentWorld === 3 ? 750 : currentWorld === 2 ? 500 : 250;
+  const maxPlatforms = currentWorld * 250;
   if (platforms.length > maxPlatforms) {
     const groundPlat = platforms.find(p => p.type === 'ground');
     const goalPlat2 = platforms.find(p => p.type === 'goal');
@@ -1784,8 +1918,8 @@ function update() {
   if (!grayBird && grayBirdRespawn <= 0) {
     if (grayBirdPlayer) {
       // Player gray bird spawns at a visible position
-      const gspd2 = currentWorld === 3 ? 0.5 : currentWorld === 2 ? 0.75 : 1.8;
-      grayBird = { x: W/2 - 18, y: cameraY + H * 0.4, vx: 0, vy: 0, wingFrame: 0, maxHeight: 0, coins: 0, onGround: false, hasDoubleJump: false, doubleJump: 0, djCharges: 0, spd: gspd2, jmp: 1, grav: 1, fric: 0.8 };
+      const gspd2 = Math.max(0.5, 1.8 - (currentWorld - 1) * 0.3);
+      grayBird = { x: W/2 - 18, y: cameraY + H * 0.4, vx: 0, vy: 0, wingFrame: 0, maxHeight: 0, coins: 0, onGround: false, hasDoubleJump: false, doubleJump: 0, djCharges: 0, spd: gspd2, jmp: 1, grav: 1, fric: 0.8, controller: 'p1' };
     } else {
       spawnGrayBird();
     }
@@ -1940,7 +2074,7 @@ function getHoliday() {
 }
 
 function drawParallaxBg() {
-  const holiday = currentWorld === 3 ? 'midautumn' : currentWorld === 2 ? 'cny' : 'summer';
+  const holiday = WORLD_HOLIDAYS[currentWorld - 1] || 'summer';
   // Sky gradient
   const grad = ctx.createLinearGradient(0, 0, 0, H);
   const skies = {
@@ -2375,7 +2509,7 @@ function draw() {
     ctx.fillText(birdDisplayName + ' ' + t('portal_label'), W/2, H/2 + 155);
 
     // Destination
-    const destName = portalNextWorld === 2 ? t('world_cny_name') : t('world_midautumn_name');
+    const destName = portalNextWorld > 0 ? t('world_' + WORLD_TKEY[portalNextWorld-1] + '_name') : '';
     ctx.fillStyle = '#aaa'; ctx.font = 'bold 16px "Courier New"';
     ctx.fillText('→ ' + destName, W/2, H/2 + 182);
 
@@ -2446,7 +2580,7 @@ function draw() {
 		ctx.fillStyle = '#aaa'; ctx.font = '13px "Courier New"';
     ctx.fillText(t('loading_text'), W/2, barY2 - 10);
 		ctx.fillStyle = '#555'; ctx.font = '9px "Courier New"';
-		ctx.fillText('v2026.06.14', W/2, H - 24);
+		ctx.fillText('v2026.07.05', W/2, H - 24);
 
     return;
   }
@@ -2534,7 +2668,7 @@ function draw() {
     // Version
     ctx.fillStyle = '#555';
     ctx.font = '9px "Courier New"';
-    ctx.fillText('v2026.06.14', W/2, H - 24);
+    ctx.fillText('v2026.07.05', W/2, H - 24);
 
     return;
   }
@@ -2632,9 +2766,7 @@ function draw() {
   const goalPlat = platforms.find(p => p.type === 'goal');
   if (goalPlat && goalPlat.y > cameraY - 100 && goalPlat.y < cameraY + H + 100) {
     const gx = goalPlat.x + goalPlat.w / 2, gy = goalPlat.y;
-    const allUnlockedGoalW1 = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT1(k); });
-    const allUnlockedGoalW2 = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT2(k); }) || localStorage.getItem('superBirdsWorld3Unlocked') === '1';
-    const showPortal = (currentWorld === 1 && allUnlockedGoalW1) || (currentWorld === 2 && allUnlockedGoalW2);
+    const showPortal = currentWorld < WORLD_COUNT && isWorldUnlocked(currentWorld + 1);
 
     if (showPortal) {
       // Portal at goal
@@ -2664,7 +2796,7 @@ function draw() {
       ctx.fillStyle = inG; ctx.beginPath(); ctx.arc(gx, gy - pr, pr * 0.5, 0, Math.PI*2); ctx.fill();
       // Label
       ctx.fillStyle = '#aaddff'; ctx.font = 'bold 12px "Courier New"'; ctx.textAlign = 'center';
-      ctx.fillText(currentWorld === 1 ? t('portal_to_cny') : currentWorld === 2 ? t('portal_to_midautumn') : t('portal_label'), gx, gy + 14);
+      ctx.fillText(t('portal_label') + ' → ' + t('world_' + WORLD_TKEY[currentWorld] + '_name'), gx, gy + 14);
       ctx.restore();
     } else {
       // Normal flag
@@ -2680,7 +2812,7 @@ function draw() {
       ctx.fillStyle = '#fff'; ctx.font = 'bold 16px "Courier New"';
       ctx.fillText(timeStr, gx, gy - 4);
       ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 14px "Courier New"';
-      ctx.fillText(currentWorld === 3 ? '3000m' : currentWorld === 2 ? '2000m' : '1000m', gx, gy + 18);
+      ctx.fillText((currentWorld * 1000) + 'm', gx, gy + 18);
     }
   }
 
@@ -2783,27 +2915,28 @@ function draw() {
   ctx.fillStyle = '#fff';
   ctx.font = '8px "Courier New"';
   ctx.textAlign = 'center';
-  ctx.fillText(barEntries.map(function(b){return (b === grayBird ? t('bird_gray') : bn(b))+':'+Math.floor(Math.max(0,b.maxHeight/10))+'m'}).join(' ')+'  '+t('hud_goal')+':'+(currentWorld===3?'3000m':currentWorld===2?'2000m':'1000m'), W/2, barY + barH * barEntries.length + 14);
+  ctx.fillText(barEntries.map(function(b){return (b === grayBird ? t('bird_gray') : bn(b))+':'+Math.floor(Math.max(0,b.maxHeight/10))+'m'}).join(' ')+'  '+t('hud_goal')+':'+(currentWorld*1000)+'m', W/2, barY + barH * barEntries.length + 14);
 
   // World indicator
-  ctx.fillStyle = currentWorld === 3 ? '#ffaa00' : currentWorld === 2 ? '#ff4444' : '#44aaff';
+  ctx.fillStyle = '#44aaff';
   ctx.font = 'bold 10px "Courier New"'; ctx.textAlign = 'right';
-  ctx.fillText(currentWorld === 3 ? t('hud_world_midautumn') : currentWorld === 2 ? t('hud_world_cny') : t('hud_world_normal'), W - 10, H - 22);
+  ctx.fillText(t('hud_world_' + WORLD_TKEY[currentWorld-1]), W - 10, H - 22);
 
 
 
-  // Gray bird damage buttons (on-screen)
-  if (gameState === 'playing' && grayBirdPlayer) {
+  // Gray bird damage buttons (right side, same rows as D-Pad) — mobile only
+  if (isMobile && gameState === 'playing' && grayBirdPlayer) {
+    const dmX = W - 58, dmW = 40, dmH = 22;
     const dmgBtns = [
-      { key: 'D', label: t('btn_damage'), color: '#cc4400', x: W - 168, y: 306, w: 50, h: 24, action: 'platform' },
-      { key: 'F', label: t('btn_damage_pipe'), color: '#aa3300', x: W - 114, y: 306, w: 50, h: 24, action: 'pipe' },
-      { key: 'G', label: t('btn_damage_cloud'), color: '#886600', x: W - 60, y: 306, w: 50, h: 24, action: 'cloud' },
+      { key: 'D', label: t('btn_damage'), color: '#cc4400', x: dmX, y: H - 124 },
+      { key: 'F', label: t('btn_damage_pipe'), color: '#aa3300', x: dmX, y: H - 96 },
+      { key: 'G', label: t('btn_damage_cloud'), color: '#886600', x: dmX, y: H - 68 },
     ];
     for (const btn of dmgBtns) {
-      ctx.fillStyle = btn.color; ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
-      ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(btn.x + 1, btn.y + 1, btn.w - 2, btn.h - 2);
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Courier New"'; ctx.textAlign = 'center';
-      ctx.fillText(btn.key + ' ' + btn.label, btn.x + btn.w/2, btn.y + 16);
+      ctx.fillStyle = btn.color; ctx.fillRect(btn.x, btn.y, dmW, dmH);
+      ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(btn.x + 1, btn.y + 1, dmW - 2, dmH - 2);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 8px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText(btn.key + ' ' + btn.label, btn.x + dmW/2, btn.y + 15);
     }
   }
 
@@ -2828,6 +2961,28 @@ function draw() {
     ctx.strokeStyle = '#5bf'; ctx.lineWidth = 2; ctx.strokeRect(homeX, btnY, btnW, btnH);
     ctx.fillStyle = '#5bf';
     ctx.fillText(t('btn_home'), homeX + btnW/2, btnY + 13);
+
+    // Virtual D-Pad (left side, mobile/tablet only)
+    if (isMobile) {
+      const dpCX = 84, dpCY = H - 70, dpS = 52, dpG = 2;
+      const dpBtns = [
+        { key: 'ArrowUp',    x: dpCX - dpS/2, y: dpCY - dpS - dpG, label: '▲' },
+        { key: 'ArrowDown',  x: dpCX - dpS/2, y: dpCY + dpG,       label: '▼' },
+        { key: 'ArrowLeft',  x: dpCX - dpS - dpG - dpS/2, y: dpCY - dpS/2, label: '◀' },
+        { key: 'ArrowRight', x: dpCX + dpG + dpS/2, y: dpCY - dpS/2, label: '▶' },
+      ];
+      for (const btn of dpBtns) {
+        const pressed = keys[btn.key];
+        ctx.fillStyle = pressed ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)';
+        ctx.fillRect(btn.x, btn.y, dpS, dpS);
+        ctx.strokeStyle = pressed ? '#ffdd00' : 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = pressed ? 3 : 1.5;
+        ctx.strokeRect(btn.x, btn.y, dpS, dpS);
+        ctx.fillStyle = pressed ? '#ffdd00' : 'rgba(255,255,255,0.5)';
+        ctx.font = 'bold 20px "Courier New"'; ctx.textAlign = 'center';
+        ctx.fillText(btn.label, btn.x + dpS/2, btn.y + dpS/2 + 7);
+      }
+    }
   }
 
   // Title Screen
@@ -2839,13 +2994,13 @@ function draw() {
     ctx.fillStyle = '#fff'; ctx.font = '16px "Courier New"';
     ctx.fillText(t('title_sub'), W/2, 155);
     // World indicator
-    ctx.fillStyle = currentWorld === 3 ? '#ffaa00' : currentWorld === 2 ? '#ff4444' : '#44aaff';
+    ctx.fillStyle = '#44aaff';
     ctx.font = 'bold 14px "Courier New"';
-    ctx.fillText(currentWorld === 3 ? t('title_world_midautumn') : currentWorld === 2 ? t('title_world_cny') : t('title_world_normal'), W/2, 180);
+    ctx.fillText(t('title_world_' + WORLD_TKEY[currentWorld-1]), W/2, 180);
 
     // Language / Rules / Wheel / Shop / Warp buttons
     const topBtnW = 58, topBtnH = 26, topBtnGap = 3;
-    const topTotalW = topBtnW * 5 + topBtnGap * 4;
+    const topTotalW = topBtnW * 6 + topBtnGap * 5;
     const topBtnStartX = W/2 - topTotalW / 2;
     const topBtnY = 192;
     const topBtnX = function(i) { return topBtnStartX + (topBtnW + topBtnGap) * i; };
@@ -2855,9 +3010,9 @@ function draw() {
     ctx.fillStyle = '#000'; ctx.font = 'bold 11px "Courier New"'; ctx.textAlign = 'center';
     ctx.fillText(t('lang_toggle'), topBtnX(0) + topBtnW/2, topBtnY + 17);
     // Rules (1)
-    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(topBtnX(1), topBtnY, topBtnW, topBtnH);
-    ctx.strokeStyle = '#5bf'; ctx.lineWidth = 2; ctx.strokeRect(topBtnX(1), topBtnY, topBtnW, topBtnH);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px "Courier New"';
+    ctx.fillStyle = '#6b3a1f'; ctx.fillRect(topBtnX(1), topBtnY, topBtnW, topBtnH);
+    ctx.fillStyle = '#8b5a2f'; ctx.fillRect(topBtnX(1) + 2, topBtnY + 2, topBtnW - 4, topBtnH - 4);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"';
     ctx.fillText(t('btn_rules'), topBtnX(1) + topBtnW/2, topBtnY + 17);
     // Wheel (2)
     ctx.fillStyle = '#8822cc'; ctx.fillRect(topBtnX(2), topBtnY, topBtnW, topBtnH);
@@ -2869,11 +3024,16 @@ function draw() {
     ctx.fillStyle = '#ff8800'; ctx.fillRect(topBtnX(3) + 2, topBtnY + 2, topBtnW - 4, topBtnH - 4);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"';
     ctx.fillText(t('btn_shop'), topBtnX(3) + topBtnW/2, topBtnY + 17);
-    // Warp World (4)
-    ctx.fillStyle = '#2255aa'; ctx.fillRect(topBtnX(4), topBtnY, topBtnW, topBtnH);
-    ctx.fillStyle = '#4477cc'; ctx.fillRect(topBtnX(4) + 2, topBtnY + 2, topBtnW - 4, topBtnH - 4);
+    // Music (4)
+    ctx.fillStyle = '#226644'; ctx.fillRect(topBtnX(4), topBtnY, topBtnW, topBtnH);
+    ctx.fillStyle = '#44aa66'; ctx.fillRect(topBtnX(4) + 2, topBtnY + 2, topBtnW - 4, topBtnH - 4);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"';
-    ctx.fillText(t('btn_warp'), topBtnX(4) + topBtnW/2, topBtnY + 17);
+    ctx.fillText(t('btn_music'), topBtnX(4) + topBtnW/2, topBtnY + 17);
+    // Warp World (5)
+    ctx.fillStyle = '#2255aa'; ctx.fillRect(topBtnX(5), topBtnY, topBtnW, topBtnH);
+    ctx.fillStyle = '#4477cc'; ctx.fillRect(topBtnX(5) + 2, topBtnY + 2, topBtnW - 4, topBtnH - 4);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"';
+    ctx.fillText(t('btn_warp'), topBtnX(5) + topBtnW/2, topBtnY + 17);
 
     // 6 birds preview in 2 rows of 3
     const previewBirds = getAllBirds();
@@ -2929,7 +3089,7 @@ function draw() {
     ctx.fillStyle = '#888'; ctx.font = '13px "Courier New"';
     ctx.fillText(t('select_hint'), W/2, 520);
     ctx.fillStyle = '#555'; ctx.font = '9px "Courier New"';
-    ctx.fillText('v2026.06.14', W/2, 545);
+    ctx.fillText('v2026.07.05', W/2, 545);
 
     // Rules overlay
     if (showRules === 'bird') {
@@ -3001,6 +3161,30 @@ function draw() {
       }
       ctx.fillStyle = '#888'; ctx.font = '11px "Courier New"';
       ctx.fillText(t('click_anywhere'), W/2, rboxY + rboxH - 16);
+    }
+
+    // Music popup
+    if (showMusicPopup) {
+      ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = 'rgba(20,20,40,0.95)'; ctx.fillRect(W/2 - 280, H/2 - 120, 560, 260);
+      // On circle (left)
+      const cr = 56, cg = 60;
+      const cOnX = W/2 - cg - cr, cOffX = W/2 + cg + cr, cY = H/2 - 20;
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = musicState === 'on' ? '#ffdd00' : '#fff';
+      ctx.beginPath(); ctx.arc(cOnX, cY, cr, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 36px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('开', cOnX, cY + 14);
+      // Off circle (right)
+      ctx.strokeStyle = musicState === 'off' ? '#ffdd00' : '#fff';
+      ctx.beginPath(); ctx.arc(cOffX, cY, cr, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillText('关', cOffX, cY + 14);
+      // Title below
+      ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 32px "Courier New"';
+      ctx.fillText('超级小鸟主题曲', W/2, H/2 + 100);
+      // Close hint
+      ctx.fillStyle = '#888'; ctx.font = '14px "Courier New"';
+      ctx.fillText(t('click_anywhere'), W/2, H/2 + 130);
     }
   }
 
@@ -3082,82 +3266,103 @@ function draw() {
   }
 
   // World Select
+  // World Select
   if (gameState === 'worldSelect') {
     ctx.fillStyle = 'rgba(0,0,0,0.88)'; ctx.fillRect(0, 0, W, H);
 
     ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 28px "Courier New"'; ctx.textAlign = 'center';
-    ctx.fillText(t('world_select'), W/2, 50);
+    ctx.fillText(t('world_select'), W/2, 40);
 
-    const worlds = [
-      { id: 1, name: t('world_normal_name'), desc: t('world_normal_desc'), color: '#44aaff', bg: 'spring' },
-      { id: 2, name: t('world_cny_name'), desc: t('world_cny_desc'), color: '#ff4444', bg: 'cny' },
-      { id: 3, name: t('world_midautumn_name'), desc: t('world_midautumn_desc'), color: '#ffaa00', bg: 'midautumn' },
-    ];
-    const wsW = 240, wsH = 200, wsGap = 15;
-    const wsTotalW = wsW * 3 + wsGap * 2;
-    const wsStartX = W/2 - wsTotalW / 2;
+    const wsW = 230, wsH = 155, wsGap = 12;
+    const wsCols = 3;
+    const cardsPerPage = 6;
+    const totalPages = Math.ceil(WORLD_COUNT / cardsPerPage);
+    const startIdx = worldSelectPage * cardsPerPage;
+    const shownWorlds = [];
+    for (let w = 1; w <= WORLD_COUNT; w++) shownWorlds.push(w);
+    const pageWorlds = shownWorlds.slice(startIdx, startIdx + cardsPerPage);
+    const wsRows = Math.ceil(pageWorlds.length / wsCols);
+    const wsGridW = wsW * Math.min(wsCols, pageWorlds.length) + wsGap * (Math.min(wsCols, pageWorlds.length) - 1);
+    const wsStartX = W/2 - wsGridW / 2;
+    const wsStartY = 70;
 
-    for (let i = 0; i < worlds.length; i++) {
-      const w = worlds[i];
-      const wx = wsStartX + i * (wsW + wsGap), wy = 90;
+    // Sky preview colors for all themes
+    const previewSkies = {
+      spring:['#7ab868','#a8d888'], cny:['#3a1020','#5a2030'], midautumn:['#1a2040','#3a4060'],
+      yuanxiao:['#2a1040','#4a2060'], qingming:['#88b8c8','#b8e8e8'], laba:['#c8a080','#e0c0a0'],
+      dragonboat:['#3a6040','#5a9070'], qixi:['#1a2a50','#3a4a70'], guoqing:['#c83030','#e05050'],
+      chongyang:['#e0a048','#f0c868'], dongzhi:['#d8d0e0','#e8e4f0']
+    };
+    const hillColors = { cny:'#c82020', midautumn:'#445566', yuanxiao:'#3a2050', qingming:'#88c8a8', laba:'#b89870', dragonboat:'#4a8a5a', qixi:'#1a2a50', guoqing:'#d83030', chongyang:'#e8c878', dongzhi:'#e8e4f0' };
+
+    for (let i = 0; i < pageWorlds.length; i++) {
+      const wId = pageWorlds[i];
+      const col = i % wsCols, row = Math.floor(i / wsCols);
+      const wx = wsStartX + col * (wsW + wsGap), wy = wsStartY + row * (wsH + wsGap);
+      const sel = currentWorld === wId;
+      const wTheme = WORLD_HOLIDAYS[wId-1];
+      const wName = t('world_' + WORLD_TKEY[wId-1] + '_name');
+      const wDesc = t('world_' + WORLD_TKEY[wId-1] + '_desc');
 
       // Card
-      const sel = currentWorld === w.id;
       ctx.fillStyle = sel ? 'rgba(255,255,255,0.12)' : 'rgba(20,20,40,0.9)'; ctx.fillRect(wx, wy, wsW, wsH);
-      ctx.strokeStyle = sel ? '#ffdd00' : w.color;
-      ctx.lineWidth = sel ? 3 : 2;
-      ctx.strokeRect(wx, wy, wsW, wsH);
+      ctx.strokeStyle = sel ? '#ffdd00' : '#44aaff'; ctx.lineWidth = sel ? 3 : 2; ctx.strokeRect(wx, wy, wsW, wsH);
 
       // Mini bg preview
-      const previewSkies = { spring: ['#7ab868','#a8d888'], cny: ['#3a1020','#5a2030'], midautumn: ['#1a2040','#3a4060'] };
-      const ps = previewSkies[w.bg];
-      const pGrad = ctx.createLinearGradient(0, wy + 40, 0, wy + wsH);
+      const ps = previewSkies[wTheme] || previewSkies.spring;
+      const pGrad = ctx.createLinearGradient(0, wy + 30, 0, wy + wsH);
       pGrad.addColorStop(0, ps[0]); pGrad.addColorStop(1, ps[1]);
-      ctx.fillStyle = pGrad; ctx.fillRect(wx + 2, wy + 40, wsW - 4, wsH - 80);
+      ctx.fillStyle = pGrad; ctx.fillRect(wx + 2, wy + 30, wsW - 4, wsH - 60);
+
       // Small hills
-      ctx.fillStyle = w.bg === 'cny' ? '#c82020' : w.bg === 'midautumn' ? '#445566' : '#68b838';
-      ctx.beginPath(); ctx.arc(wx + wsW * 0.33, wy + wsH - 38, 45, Math.PI, 0); ctx.fill();
-      ctx.beginPath(); ctx.arc(wx + wsW * 0.67, wy + wsH - 42, 55, Math.PI, 0); ctx.fill();
-      // Midautumn moon on preview
-      if (w.bg === 'midautumn') {
-        ctx.fillStyle = '#ffffcc'; ctx.beginPath(); ctx.arc(wx + wsW - 30, wy + 60, 22, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = hillColors[wTheme] || '#68b838';
+      ctx.beginPath(); ctx.arc(wx + wsW * 0.33, wy + wsH - 28, 35, Math.PI, 0); ctx.fill();
+      ctx.beginPath(); ctx.arc(wx + wsW * 0.67, wy + wsH - 32, 40, Math.PI, 0); ctx.fill();
+
+      // Moon for midautumn
+      if (wTheme === 'midautumn') {
+        ctx.fillStyle = '#ffffcc'; ctx.beginPath(); ctx.arc(wx + wsW - 25, wy + 50, 18, 0, Math.PI * 2); ctx.fill();
       }
 
       // Name + desc
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 22px "Courier New"'; ctx.textAlign = 'center';
-      ctx.fillText(w.name, wx + wsW/2, wy + 160);
-      ctx.fillStyle = '#aaa'; ctx.font = '13px "Courier New"';
-      ctx.fillText(w.desc, wx + wsW/2, wy + 185);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 16px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText(wName, wx + wsW/2, wy + 135);
+      ctx.fillStyle = '#aaa'; ctx.font = '11px "Courier New"';
+      ctx.fillText(wDesc, wx + wsW/2, wy + 152);
 
       // Current tag
       if (sel) {
-        ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 11px "Courier New"';
-        ctx.fillText(t('world_current'), wx + wsW/2, wy + 28);
+        ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 10px "Courier New"';
+        ctx.fillText(t('world_current'), wx + wsW/2, wy + 22);
       }
 
-      // Lock overlay for world 2
-      if (w.id === 2) {
-        const allUnlockedWS = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT1(k); }) || localStorage.getItem('superBirdsWorld2Unlocked') === '1';
-        if (!allUnlockedWS) {
-          ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(wx, wy, wsW, wsH);
-          ctx.fillStyle = '#ff4444'; ctx.font = 'bold 48px "Courier New"'; ctx.textAlign = 'center';
-          ctx.fillText('🔒', wx + wsW/2, wy + wsH/2 + 12);
-          ctx.fillStyle = '#ff6666'; ctx.font = 'bold 14px "Courier New"';
-          ctx.fillText(t('world_locked'), wx + wsW/2, wy + wsH - 10);
-        }
+      // Lock overlay
+      if (!isWorldUnlocked(wId)) {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(wx, wy, wsW, wsH);
+        ctx.fillStyle = '#ff4444'; ctx.font = 'bold 36px "Courier New"'; ctx.textAlign = 'center';
+        ctx.fillText('🔒', wx + wsW/2, wy + wsH/2 + 8);
+        ctx.fillStyle = '#ff6666'; ctx.font = 'bold 12px "Courier New"';
+        ctx.fillText(t('world_locked'), wx + wsW/2, wy + wsH - 8);
       }
+    }
 
-      // Lock overlay for world 3
-      if (w.id === 3) {
-        const allW2Unlocked = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'].every(function(k) { return !isLockedT2(k); }) || localStorage.getItem('superBirdsWorld3Unlocked') === '1';
-        if (!allW2Unlocked) {
-          ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(wx, wy, wsW, wsH);
-          ctx.fillStyle = '#ff4444'; ctx.font = 'bold 48px "Courier New"'; ctx.textAlign = 'center';
-          ctx.fillText('🔒', wx + wsW/2, wy + wsH/2 + 12);
-          ctx.fillStyle = '#ff6666'; ctx.font = 'bold 14px "Courier New"';
-          ctx.fillText(t('world_locked'), wx + wsW/2, wy + wsH - 10);
-        }
-      }
+    // Page navigation
+    const navY = wsStartY + wsRows * (wsH + wsGap) + 10;
+    ctx.fillStyle = '#aaa'; ctx.font = '12px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText((worldSelectPage + 1) + ' / ' + totalPages, W/2, navY + 18);
+    if (worldSelectPage > 0) {
+      const lx = W/2 - 55, ly = navY, lw = 36, lh = 24;
+      ctx.fillStyle = '#555'; ctx.fillRect(lx, ly, lw, lh);
+      ctx.strokeStyle = '#888'; ctx.lineWidth = 2; ctx.strokeRect(lx, ly, lw, lh);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 14px "Courier New"';
+      ctx.fillText('◀', lx + lw/2, ly + 17);
+    }
+    if (startIdx + cardsPerPage < WORLD_COUNT) {
+      const rx = W/2 + 19, ry = navY, rw = 36, rh = 24;
+      ctx.fillStyle = '#555'; ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeStyle = '#888'; ctx.lineWidth = 2; ctx.strokeRect(rx, ry, rw, rh);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 14px "Courier New"';
+      ctx.fillText('▶', rx + rw/2, ry + 17);
     }
 
     // Back button
@@ -3176,7 +3381,7 @@ function draw() {
 
     const wheelCX = W/2, wheelCY = 210, wheelR = 160;
     const segAngle = (Math.PI * 2) / 5;
-    const segColors = ['#ffdd00', '#888888', '#ff8800', '#44aaff', '#ff4444'];
+    const segColors = ['#ffdd00', '#ff66aa', '#ff8800', '#44aaff', '#ff4444'];
     const segLabels = ['wheel_p1', 'wheel_p2', 'wheel_p3', 'wheel_p4', 'wheel_p5'];
 
     // Draw wheel segments
@@ -3208,7 +3413,7 @@ function draw() {
     // Spin button
     if (!wheelSpinning && wheelResult < 0) {
       const sbW = 210, sbH = 44, sbX = W/2 - sbW/2, sbY = 400;
-      const wheelCost = currentWorld === 3 ? 300 : currentWorld === 2 ? 200 : 100;
+      const wheelCost = currentWorld * 100;
       const canAfford = totalCoins >= wheelCost;
       ctx.fillStyle = canAfford ? '#cc6600' : '#555'; ctx.fillRect(sbX, sbY, sbW, sbH);
       ctx.fillStyle = canAfford ? '#ff8800' : '#777'; ctx.fillRect(sbX + 3, sbY + 3, sbW - 6, sbH - 6);
@@ -3395,7 +3600,7 @@ function draw() {
       if (winner) { if (isGoodWin) winJingle(); else loseJingle(); }
       else { winJingle(); loseJingle(); }
       winSoundPlayed = true;
-      if (isPlayerWin) { totalCoins += currentWorld === 3 ? 300 : currentWorld === 2 ? 200 : 100; }
+      if (isPlayerWin) { totalCoins += currentWorld * 100; }
       localStorage.setItem('superBirdsTotalCoins', totalCoins);
     }
     if (winner) {
@@ -3426,7 +3631,7 @@ function draw() {
       ctx.fillText(winnerName + ' ' + t('win_reached') + ' ' + Math.floor(winner.maxHeight/10) + t('win_meter'), W/2, H/2 + 45);
       if (isGoodWin) {
         ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 16px "Courier New"';
-        ctx.fillText('+' + (currentWorld === 3 ? 300 : currentWorld === 2 ? 200 : 100) + t('win_bonus'), W/2, H/2 + 68);
+        ctx.fillText('+' + (currentWorld * 100) + t('win_bonus'), W/2, H/2 + 68);
       }
     } else {
       ctx.fillStyle = '#ff6666'; ctx.font = 'bold 32px "Courier New"';
@@ -3556,16 +3761,28 @@ function gameLoop() {
         if (prize.reward === 'coins') {
           totalCoins += prize.amount;
           localStorage.setItem('superBirdsTotalCoins', totalCoins);
-        } else if (prize.reward === 'gray') {
-          if (isLocked('gray')) {
-            unlockSet().add('gray');
+        } else if (prize.reward === 'egg') {
+          // Bird Egg: unlock a random locked bird that is NOT the next in progression
+          const progression = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'];
+          let nextIdx = -1;
+          for (let pi = 0; pi < progression.length; pi++) {
+            if (isLocked(progression[pi])) { nextIdx = pi; break; }
+          }
+          const candidates = [];
+          for (let pi = 0; pi < progression.length; pi++) {
+            if (pi !== nextIdx && isLocked(progression[pi])) candidates.push(progression[pi]);
+          }
+          if (candidates.length > 0) {
+            const pick = candidates[Math.floor(Math.random() * candidates.length)];
+            unlockSet().add(pick);
             localStorage.setItem(unlockStorageKey(), JSON.stringify([...unlockSet()]));
           }
         } else if (prize.reward === 'newWorld') {
-          if (!localStorage.getItem('superBirdsWorld2Unlocked')) {
-            localStorage.setItem('superBirdsWorld2Unlocked', '1');
-          } else {
-            localStorage.setItem('superBirdsWorld3Unlocked', '1');
+          for (let w = 2; w <= WORLD_COUNT; w++) {
+            if (!localStorage.getItem('superBirdsWorld' + w + 'Unlocked')) {
+              localStorage.setItem('superBirdsWorld' + w + 'Unlocked', '1');
+              break;
+            }
           }
         } else if (prize.reward === 'unlockAny') {
           const progression = ['小蓝莓','小绿','小芒果','白白','蓝蓝','gray'];
@@ -3581,7 +3798,7 @@ function gameLoop() {
     }
     if (gameState === 'wheel' && wheelResult >= 0 && wheelResultTimer > 0) {
       wheelResultTimer--;
-      if (wheelResultTimer <= 0) { gameState = 'title'; }
+      if (wheelResultTimer <= 0) { wheelResult = -1; }
     }
     if (gameState === 'snow') {
       snowTimer--;

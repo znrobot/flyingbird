@@ -771,7 +771,7 @@ let savedPlatforms = null, savedCoins = null, savedPipes = null, savedClouds = n
 let grayBird = null, grayBirdRespawn = 0; // the rules-stealing troublemaker
 let grayBirdPlayer = false; // player chose gray bird in selection
 let worldLoadingTimer = 0;
-let portalSpinTimer = 0, portalNextWorld = 0;
+let portalSpinTimer = 0, portalNextWorld = 0, portalBirdName = null, portalBirdColor = null;
 
 function spawnGrayBird() {
   var gspd = 1.8;
@@ -1680,6 +1680,8 @@ function update() {
         totalCoins += 100;
         localStorage.setItem('superBirdsTotalCoins', totalCoins);
         portalNextWorld = 2;
+        portalBirdName = b.name;
+        portalBirdColor = b.color;
         portalSpinTimer = 90;
         gameState = 'portalSpin';
       } else if (currentWorld === 2 && allUnlockedW2) {
@@ -1687,6 +1689,8 @@ function update() {
         totalCoins += 100;
         localStorage.setItem('superBirdsTotalCoins', totalCoins);
         portalNextWorld = 3;
+        portalBirdName = b.name;
+        portalBirdColor = b.color;
         portalSpinTimer = 90;
         gameState = 'portalSpin';
       } else {
@@ -2337,37 +2341,43 @@ function draw() {
       ctx.stroke();
     }
 
-    // Spinning bird silhouette at center
+    // Spinning bird at center (player's actual bird)
     const birdAngle = spinAngle * 3;
     ctx.save();
     ctx.rotate(birdAngle);
-    const bs = 2.5;
-    const bx = -18*bs/2, by = -32*bs/2;
-    ctx.fillStyle = '#ffdd00';
-    ctx.fillRect(bx + 36*bs*0.3, by + 32*bs*0.2, 36*bs*0.4, 32*bs*0.35);
-    ctx.fillRect(bx + 36*bs*0.6, by + 32*bs*0.15, 36*bs*0.25, 32*bs*0.25);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(bx + 36*bs*0.64, by + 32*bs*0.18, 36*bs*0.10, 32*bs*0.10);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(bx + 36*bs*0.665, by + 32*bs*0.205, 36*bs*0.05, 32*bs*0.05);
-    ctx.fillStyle = '#ffaa00';
-    ctx.fillRect(bx + 36*bs*0.75, by + 32*bs*0.22, 36*bs*0.12, 32*bs*0.06);
-    ctx.fillStyle = '#888';
-    ctx.fillRect(bx + 36*bs*0.42, by + 32*bs*0.02, 36*bs*0.16, 32*bs*0.22);
-    ctx.fillRect(bx + 36*bs*0.2, by + 32*bs*0.3, 36*bs*0.2, 32*bs*0.2);
+    const bs = 3;
+    const bx2 = -18*bs/2, by2 = -32*bs/2;
+    const bc = portalBirdColor || '#ffdd00';
+    const bc2 = bc; // body color
+    const bcDark = bc; // darker shade
+    // Head
+    ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.6, by2 + 32*bs*0.15, 36*bs*0.25, 32*bs*0.25);
+    ctx.fillStyle = '#fff'; ctx.fillRect(bx2 + 36*bs*0.64, by2 + 32*bs*0.18, 36*bs*0.10, 32*bs*0.10);
+    ctx.fillStyle = '#000'; ctx.fillRect(bx2 + 36*bs*0.665, by2 + 32*bs*0.205, 36*bs*0.05, 32*bs*0.05);
+    ctx.fillStyle = '#ffaa00'; ctx.fillRect(bx2 + 36*bs*0.75, by2 + 32*bs*0.22, 36*bs*0.12, 32*bs*0.06);
+    // Body
+    ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.3, by2 + 32*bs*0.2, 36*bs*0.4, 32*bs*0.35);
+    // Wing
+    ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.42, by2 + 32*bs*0.02, 36*bs*0.16, 32*bs*0.22);
+    ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.2, by2 + 32*bs*0.3, 36*bs*0.2, 32*bs*0.2);
     ctx.restore();
 
     ctx.restore();
 
-    // +100 coins text
+    // +100 coins + bird name
     const coinAlpha = portalSpinTimer > 60 ? 1 : (portalSpinTimer / 60);
     ctx.fillStyle = 'rgba(255,221,0,' + coinAlpha + ')'; ctx.font = 'bold 36px "Courier New"'; ctx.textAlign = 'center';
     ctx.fillText('+100 💰', W/2, H/2 + 120);
 
-    // Entering text
+    // Bird name spinning in
+    const birdDisplayName = portalBirdName === 'gray' ? t('bird_gray') : bn({name: portalBirdName || ''});
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 22px "Courier New"';
+    ctx.fillText(birdDisplayName + ' ' + t('portal_label'), W/2, H/2 + 155);
+
+    // Destination
     const destName = portalNextWorld === 2 ? t('world_cny_name') : t('world_midautumn_name');
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 20px "Courier New"';
-    ctx.fillText(t('portal_label') + ' → ' + destName, W/2, H/2 + 160);
+    ctx.fillStyle = '#aaa'; ctx.font = 'bold 16px "Courier New"';
+    ctx.fillText('→ ' + destName, W/2, H/2 + 182);
 
     return;
   }
@@ -3516,7 +3526,7 @@ function gameLoop() {
         whiteBird = makeBird(140, '白白', '#eeeeee', null, getTraits('白白'));
         blueWhiteBird = makeBird(460, '蓝蓝', '#b8ccf0', null, getTraits('蓝蓝'));
         p1Bird = null; grayBird = null; grayBirdRespawn = 0; grayBirdPlayer = false;
-        portalSpinTimer = 0; portalNextWorld = 0;
+        portalSpinTimer = 0; portalNextWorld = 0; portalBirdName = null; portalBirdColor = null;
         worldLoadingTimer = 90;
         gameState = 'worldLoading';
       }

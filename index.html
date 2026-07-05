@@ -1691,33 +1691,29 @@ function update() {
       if (currentWorld === 1 && allUnlockedW1) {
         // Portal: transport to world 2
         currentWorld = 2;
-        var _ctrls = getAllBirds().map(function(b2) { return b2.controller; });
         initWorld();
-        blueBird = makeBird(140, '小蓝', '#4488ff', _ctrls[0], getTraits('小蓝'));
-        blueberryBird = makeBird(300, '小蓝莓', '#6666cc', _ctrls[1], getTraits('小蓝莓'));
-        greenBird = makeBird(460, '小绿', '#44cc44', _ctrls[2], getTraits('小绿'));
-        mangoBird = makeBird(620, '小芒果', '#ffbb33', _ctrls[3], getTraits('小芒果'));
-        whiteBird = makeBird(140, '白白', '#eeeeee', _ctrls[4], getTraits('白白'));
-        blueWhiteBird = makeBird(460, '蓝蓝', '#b8ccf0', _ctrls[5], getTraits('蓝蓝'));
+        blueBird = makeBird(140, '小蓝', '#4488ff', null, getTraits('小蓝'));
+        blueberryBird = makeBird(300, '小蓝莓', '#6666cc', null, getTraits('小蓝莓'));
+        greenBird = makeBird(460, '小绿', '#44cc44', null, getTraits('小绿'));
+        mangoBird = makeBird(620, '小芒果', '#ffbb33', null, getTraits('小芒果'));
+        whiteBird = makeBird(140, '白白', '#eeeeee', null, getTraits('白白'));
+        blueWhiteBird = makeBird(460, '蓝蓝', '#b8ccf0', null, getTraits('蓝蓝'));
         p1Bird = null; grayBird = null; grayBirdRespawn = 0; grayBirdPlayer = false;
-        for (var _j = 0; _j < getAllBirds().length; _j++) { if (getAllBirds()[_j].controller === 'p1') p1Bird = getAllBirds()[_j]; }
-	        if (!p1Bird) p1Bird = blueBird;
-        gameStartFrame = frame;
+        worldLoadingTimer = 90;
+        gameState = 'worldLoading';
       } else if (currentWorld === 2 && allUnlockedW2) {
         // Portal: transport to world 3
         currentWorld = 3;
-        var _ctrls2 = getAllBirds().map(function(b2) { return b2.controller; });
         initWorld();
-        blueBird = makeBird(140, '小蓝', '#4488ff', _ctrls2[0], getTraits('小蓝'));
-        blueberryBird = makeBird(300, '小蓝莓', '#6666cc', _ctrls2[1], getTraits('小蓝莓'));
-        greenBird = makeBird(460, '小绿', '#44cc44', _ctrls2[2], getTraits('小绿'));
-        mangoBird = makeBird(620, '小芒果', '#ffbb33', _ctrls2[3], getTraits('小芒果'));
-        whiteBird = makeBird(140, '白白', '#eeeeee', _ctrls2[4], getTraits('白白'));
-        blueWhiteBird = makeBird(460, '蓝蓝', '#b8ccf0', _ctrls2[5], getTraits('蓝蓝'));
+        blueBird = makeBird(140, '小蓝', '#4488ff', null, getTraits('小蓝'));
+        blueberryBird = makeBird(300, '小蓝莓', '#6666cc', null, getTraits('小蓝莓'));
+        greenBird = makeBird(460, '小绿', '#44cc44', null, getTraits('小绿'));
+        mangoBird = makeBird(620, '小芒果', '#ffbb33', null, getTraits('小芒果'));
+        whiteBird = makeBird(140, '白白', '#eeeeee', null, getTraits('白白'));
+        blueWhiteBird = makeBird(460, '蓝蓝', '#b8ccf0', null, getTraits('蓝蓝'));
         p1Bird = null; grayBird = null; grayBirdRespawn = 0; grayBirdPlayer = false;
-        for (var _k = 0; _k < getAllBirds().length; _k++) { if (getAllBirds()[_k].controller === 'p1') p1Bird = getAllBirds()[_k]; }
-        if (!p1Bird) p1Bird = blueBird;
-        gameStartFrame = frame;
+        worldLoadingTimer = 90;
+        gameState = 'worldLoading';
       } else {
         gameState = 'over';
         winner = b;

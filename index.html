@@ -421,6 +421,8 @@ const HINT_CONFIGS = [
   { id:'hint_wheel',   textZh:'点击「转盘」试试运气赢取奖励！',     textEn:'Click "Wheel" to spin for prizes!',          highlight:'wheelBtn',  timeout:0 },
   { id:'hint_shop',    textZh:'点击「商店」购买新角色！',           textEn:'Click "Shop" to buy new birds!',             highlight:'shopBtn',   timeout:0 },
   { id:'hint_start',   textZh:'准备好了？点击「开始游戏」吧！',     textEn:'Ready? Click "Start Game" to begin!',        highlight:'startBtn',  timeout:0 },
+  { id:'hint_select',  textZh:'点击选择你的小鸟角色！',             textEn:'Click to choose your bird!',                 highlight:'',          timeout:0 },
+  { id:'hint_powerup', textZh:'选择一个道具获得特殊能力！',         textEn:'Pick a power-up for special abilities!',     highlight:'',          timeout:0 },
   { id:'hint_jump',    textZh:'按 ↑ 键或点击屏幕让小鸟飞起来！',    textEn:'Press UP or tap to make your bird fly!',      highlight:'up',        timeout:0 },
   { id:'hint_platform',textZh:'落在平台上可以休息并继续向上攀爬！',  textEn:'Land on platforms to rest and climb higher!', highlight:'',          timeout:0 },
   { id:'hint_coin',    textZh:'收集金币！可以在商店购买新角色',      textEn:'Collect coins! Buy new birds in the Shop!',   highlight:'',          timeout:5000 },
@@ -945,17 +947,17 @@ function getPlayerBird() { return grayBirdPlayer ? grayBird : p1Bird; }
 
 function checkHintActivation() {
   if (hintCurrentIdx >= 0) return;
-  // Only check the NEXT uncompleted hint (strictly sequential)
   for (let i = 0; i < HINT_CONFIGS.length; i++) {
     const h = HINT_CONFIGS[i];
     if (hintDone(h.id)) continue;
-    // This is the next uncompleted hint - check if it should trigger now
     let triggered = false;
     switch (h.id) {
       case 'hint_rules':   triggered = (gameState === 'title'); break;
       case 'hint_wheel':   triggered = (gameState === 'title'); break;
       case 'hint_shop':    triggered = (gameState === 'title'); break;
       case 'hint_start':   triggered = (gameState === 'title'); break;
+      case 'hint_select':  triggered = (gameState === 'select' && selectTimer > 300); break;
+      case 'hint_powerup': triggered = (gameState === 'select' && selectTimer <= 300); break;
       case 'hint_jump':    triggered = (gameState === 'playing' && hintFirstJumpDone); break;
       case 'hint_platform':triggered = (gameState === 'playing' && hintFirstLandDone); break;
       case 'hint_coin':    triggered = (gameState === 'playing' && hintFirstCoinDone); break;
@@ -970,7 +972,6 @@ function checkHintActivation() {
       speakText(txt);
       return;
     }
-    // This hint isn't ready - don't skip to next one
     return;
   }
 }
@@ -2132,8 +2133,8 @@ canvas.addEventListener('click', e => {
   if (gameState === 'over') {
     const rbx = W/2 - 170, rby = H/2 + 70, rbw = 150, rbh = 55;
     const hbx = W/2 + 20, hby = H/2 + 70, hbw = 150, hbh = 55;
-    if (mx > rbx && mx < rbx + rbw && my > rby && my < rby + rbh) { if (hintCurrentIdx === 9) { hintComplete('hint_gameover'); hintCurrentIdx = -1; } resetGameKeepSelection(); gameState = 'playing'; return; }
-    if (mx > hbx && mx < hbx + hbw && my > hby && my < hby + hbh) { if (hintCurrentIdx === 9) { hintComplete('hint_gameover'); hintCurrentIdx = -1; } resetGame(); return; }
+    if (mx > rbx && mx < rbx + rbw && my > rby && my < rby + rbh) { if (hintCurrentIdx === 11) { hintComplete('hint_gameover'; hintCurrentIdx = -1; } resetGameKeepSelection(); gameState = 'playing'; return; }
+    if (mx > hbx && mx < hbx + hbw && my > hby && my < hby + hbh) { if (hintCurrentIdx === 11) { hintComplete('hint_gameover'; hintCurrentIdx = -1; } resetGame(); return; }
     // Treasure chest button
     const tcY2 = H/2 + 138, barH3 = 18;
     const barY3 = tcY2 + 18, gbW2 = 130, gbH2 = 34, gbX2 = W/2 - gbW2/2, gbY3 = barY3 + barH3 + 8;
@@ -2150,6 +2151,7 @@ canvas.addEventListener('click', e => {
 
   // Character / Power-Up selection screen
   if (gameState === 'select' && selectTimer > 300) {
+    hintClickedDone['hint_select'] = true;
     {
       const birds = getAllBirds();
       const positions = [
@@ -2219,6 +2221,7 @@ canvas.addEventListener('click', e => {
       const cy = cardStartY + i * (cardH + cardGap);
       if (mx > cardX && mx < cardX + cardW && my > cy && my < cy + cardH) {
         powerUp = puOptions[i];
+        hintClickedDone['hint_powerup'] = true;
         return;
       }
     }
@@ -3904,7 +3907,7 @@ function draw() {
   ctx.fillText(t('hud_ctrl'), W/2, H - 10);
 
   // Hint jump center highlight (desktop)
-  if (gameState === 'playing' && hintCurrentIdx === 4 && !isMobile) {
+  if (gameState === 'playing' && hintCurrentIdx === 6 && !isMobile) {
     const pulse = 0.4 + 0.6 * Math.sin(frame * 0.08);
     ctx.strokeStyle = 'rgba(255,221,0,' + pulse + ')';
     ctx.lineWidth = 4;
@@ -3946,7 +3949,7 @@ function draw() {
         const pressed = keys[btn.key];
         ctx.fillStyle = pressed ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)';
         ctx.fillRect(btn.x, btn.y, dpS, dpS);
-        const hintHL = hintCurrentIdx === 4 && btn.key === 'ArrowUp';
+        const hintHL = hintCurrentIdx === 6 && btn.key === 'ArrowUp';
         ctx.strokeStyle = hintHL ? '#ffdd00' : (pressed ? '#ffdd00' : 'rgba(255,255,255,0.3)');
         ctx.lineWidth = hintHL ? 4 : (pressed ? 3 : 1.5);
         ctx.strokeRect(btn.x, btn.y, dpS, dpS);
@@ -4910,7 +4913,7 @@ function draw() {
     const rbx = W/2 - 170, rby = H/2 + 70, rbw = 150, rbh = 55;
     ctx.fillStyle = '#e05030'; ctx.fillRect(rbx, rby, rbw, rbh);
     ctx.fillStyle = '#ff6040'; ctx.fillRect(rbx + 3, rby + 3, rbw - 6, rbh - 6);
-    if (hintCurrentIdx === 9) {
+    if (hintCurrentIdx === 11) {
       const p3 = 0.5 + 0.5 * Math.sin(frame * 0.1);
       ctx.strokeStyle = 'rgba(255,221,0,' + (0.6 + p3 * 0.4) + ')'; ctx.lineWidth = 5;
       ctx.strokeRect(rbx - 4, rby - 4, rbw + 8, rbh + 8);
@@ -4921,7 +4924,7 @@ function draw() {
     const hbx = W/2 + 20, hby = H/2 + 70, hbw = 150, hbh = 55;
     ctx.fillStyle = '#3080e0'; ctx.fillRect(hbx, hby, hbw, hbh);
     ctx.fillStyle = '#40a0ff'; ctx.fillRect(hbx + 3, hby + 3, hbw - 6, hbh - 6);
-    if (hintCurrentIdx === 9) {
+    if (hintCurrentIdx === 11) {
       const p4 = 0.5 + 0.5 * Math.sin(frame * 0.1);
       ctx.strokeStyle = 'rgba(255,221,0,' + (0.6 + p4 * 0.4) + ')'; ctx.lineWidth = 5;
       ctx.strokeRect(hbx - 4, hby - 4, hbw + 8, hbh + 8);
@@ -5210,8 +5213,10 @@ function gameLoop() {
     }
     // Hint game over trigger
     if (gameState === 'over' && !hintFirstGameOver) hintFirstGameOver = true;
-    // Hint title button triggers
+    // Hint title screen activation
     if (gameState === 'title' && hintCurrentIdx < 0) checkHintActivation();
+    // Hint select screen activation
+    if (gameState === 'select' && hintCurrentIdx < 0) checkHintActivation();
     // Hint completion check
     if (hintCurrentIdx >= 0) {
       const h = HINT_CONFIGS[hintCurrentIdx];
@@ -5223,17 +5228,19 @@ function gameLoop() {
         else if (ci === 1) completed = hintClickedDone['hint_wheel'];
         else if (ci === 2) completed = hintClickedDone['hint_shop'];
         else if (ci === 3) completed = hintClickedDone['hint_start'];
-        else if (ci === 4) completed = hintFirstLandDone;
-        else if (ci === 5) completed = hintFirstCoinDone;
-        else if (ci === 9) completed = hintDone('hint_gameover');
+        else if (ci === 4) completed = hintClickedDone['hint_select'];
+        else if (ci === 5) completed = hintClickedDone['hint_powerup'];
+        else if (ci === 6) completed = hintFirstLandDone;
+        else if (ci === 7) completed = hintFirstCoinDone;
+        else if (ci === 11) completed = hintDone('hint_gameover');
       }
       if (completed) { hintComplete(h.id); hintCurrentIdx = -1; }
     }
-    // Hint activation (during gameplay)
+    // Hint activation (non-title)
     if (hintCurrentIdx < 0 && gameState !== 'title') checkHintActivation();
     if (gameState === 'select') {
       selectTimer--;
-      if (selectTimer <= 300 && powerUp === null) powerUp = 'random';
+      if (selectTimer <= 300 && powerUp === null) { powerUp = 'random'; hintClickedDone['hint_powerup'] = true; }
       if (selectTimer <= 0) {
         if (powerUp === null || powerUp === 'none' || powerUp === 'random') { const pool = ['superFlight','coinMagnet','doubleTime']; powerUp = pool[Math.floor(Math.random() * pool.length)]; }
         // Track play count for the selected bird

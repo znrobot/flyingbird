@@ -1474,7 +1474,7 @@ function spawnGrayBird() {
   let gspd = 1.8 + (currentWorld - 1) * 0.2;
   const gcfg = graySpeeds[currentWorld];
   if (gcfg) { gspd = unlockSets[currentWorld-1].has('gray') ? gcfg.unlocked : gcfg.locked; }
-  grayBird = { x: -60, y: cameraY + H * 0.4, vx: 2, vy: 0, wingFrame: 0, maxHeight: 0, coins: 0, onGround: false, spd: gspd, jmp: 1, grav: 1, fric: 0.8 };
+  grayBird = { name: 'gray', color: '#999999', x: -60, y: cameraY + H * 0.4, vx: 2, vy: 0, wingFrame: 0, maxHeight: 0, coins: 0, onGround: false, spd: gspd, jmp: 1, grav: 1, fric: 0.8 };
 }
 
 function drawGrayBird(gb) {
@@ -2682,7 +2682,7 @@ function update() {
     if (grayBirdPlayer) {
       // Player gray bird spawns at a visible position
       const gspd2 = Math.max(0.5, 1.8 - (currentWorld - 1) * 0.3);
-      grayBird = { x: W/2 - 18, y: cameraY + H * 0.4, vx: 0, vy: 0, wingFrame: 0, maxHeight: 0, coins: 0, onGround: false, hasDoubleJump: false, doubleJump: 0, djCharges: 0, spd: gspd2, jmp: 1, grav: 1, fric: 0.8, controller: 'p1' };
+      grayBird = { name: 'gray', color: '#999999', x: W/2 - 18, y: cameraY + H * 0.4, vx: 0, vy: 0, wingFrame: 0, maxHeight: 0, coins: 0, onGround: false, hasDoubleJump: false, doubleJump: 0, djCharges: 0, spd: gspd2, jmp: 1, grav: 1, fric: 0.8, controller: 'p1' };
     } else {
       spawnGrayBird();
     }
@@ -3244,19 +3244,28 @@ function draw() {
     ctx.rotate(birdAngle);
     const bs = 3;
     const bx2 = -18*bs/2, by2 = -32*bs/2;
-    const bc = portalBirdColor || '#ffdd00';
-    const bc2 = bc; // body color
-    const bcDark = bc; // darker shade
-    // Head
-    ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.6, by2 + 32*bs*0.15, 36*bs*0.25, 32*bs*0.25);
-    ctx.fillStyle = '#fff'; ctx.fillRect(bx2 + 36*bs*0.64, by2 + 32*bs*0.18, 36*bs*0.10, 32*bs*0.10);
-    ctx.fillStyle = '#000'; ctx.fillRect(bx2 + 36*bs*0.665, by2 + 32*bs*0.205, 36*bs*0.05, 32*bs*0.05);
-    ctx.fillStyle = '#ffaa00'; ctx.fillRect(bx2 + 36*bs*0.75, by2 + 32*bs*0.22, 36*bs*0.12, 32*bs*0.06);
-    // Body
-    ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.3, by2 + 32*bs*0.2, 36*bs*0.4, 32*bs*0.35);
-    // Wing
-    ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.42, by2 + 32*bs*0.02, 36*bs*0.16, 32*bs*0.22);
-    ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.2, by2 + 32*bs*0.3, 36*bs*0.2, 32*bs*0.2);
+    if (portalBirdName === 'gray') {
+      // Gray bird special rendering
+      ctx.fillStyle = '#999'; ctx.fillRect(bx2 + 36*bs*0.3, by2 + 32*bs*0.2, 36*bs*0.4, 32*bs*0.35);
+      ctx.fillStyle = '#777'; ctx.fillRect(bx2 + 36*bs*0.6, by2 + 32*bs*0.15, 36*bs*0.25, 32*bs*0.25);
+      ctx.fillStyle = '#fff'; ctx.fillRect(bx2 + 36*bs*0.64, by2 + 32*bs*0.18, 36*bs*0.10, 32*bs*0.10);
+      ctx.fillStyle = '#000'; ctx.fillRect(bx2 + 36*bs*0.665, by2 + 32*bs*0.205, 36*bs*0.05, 32*bs*0.05);
+      ctx.fillStyle = '#ff6600'; ctx.fillRect(bx2 + 36*bs*0.75, by2 + 32*bs*0.22, 36*bs*0.12, 32*bs*0.06);
+      ctx.fillStyle = '#888'; ctx.fillRect(bx2 + 36*bs*0.42, by2 + 32*bs*0.02, 36*bs*0.16, 32*bs*0.22);
+      ctx.fillStyle = '#777'; ctx.fillRect(bx2 + 36*bs*0.2, by2 + 32*bs*0.3, 36*bs*0.2, 32*bs*0.2);
+    } else {
+      const bc = portalBirdColor || '#ffdd00';
+      // Head
+      ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.6, by2 + 32*bs*0.15, 36*bs*0.25, 32*bs*0.25);
+      ctx.fillStyle = '#fff'; ctx.fillRect(bx2 + 36*bs*0.64, by2 + 32*bs*0.18, 36*bs*0.10, 32*bs*0.10);
+      ctx.fillStyle = '#000'; ctx.fillRect(bx2 + 36*bs*0.665, by2 + 32*bs*0.205, 36*bs*0.05, 32*bs*0.05);
+      ctx.fillStyle = '#ffaa00'; ctx.fillRect(bx2 + 36*bs*0.75, by2 + 32*bs*0.22, 36*bs*0.12, 32*bs*0.06);
+      // Body
+      ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.3, by2 + 32*bs*0.2, 36*bs*0.4, 32*bs*0.35);
+      // Wing
+      ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.42, by2 + 32*bs*0.02, 36*bs*0.16, 32*bs*0.22);
+      ctx.fillStyle = bc; ctx.fillRect(bx2 + 36*bs*0.2, by2 + 32*bs*0.3, 36*bs*0.2, 32*bs*0.2);
+    }
     ctx.restore();
 
     ctx.restore();

@@ -770,7 +770,7 @@ const TXT = {
     btn_shop: '🛒 购买', btn_warp: '🌐 传送', btn_wheel: '🎡 转盘', btn_music: '🎵 音乐',
     music_coming_soon: '正在创造中，敬请等待！ 🎶',
     label_total_coins: '💰 累计金币: ',
-    btn_refresh: '🔄 更新游戏',
+    btn_refresh: '🔄 更新游戏', btn_reset: '🗑 重置进度',
     wheel_title: '🎡 幸运转盘', wheel_spin: '🎰 开始转动', wheel_back: '返回',
     wheel_p1: '进入新世界', wheel_p2: '小鸟蛋', wheel_p3: '100金币', wheel_p4: '解锁皮肤权', wheel_p5: '10000金币',
     wheel_win: '🎉 恭喜获得: ', wheel_countdown: '秒后可再次转动',
@@ -872,7 +872,7 @@ const TXT = {
     btn_shop: '🛒 Shop', btn_warp: '🌐 Warp', btn_wheel: '🎡 Wheel', btn_music: '🎵 Music',
     music_coming_soon: 'Working on it, please wait 🎶',
     label_total_coins: '💰 Total Coins: ',
-    btn_refresh: '🔄 Refresh',
+    btn_refresh: '🔄 Refresh', btn_reset: '🗑 Reset',
     wheel_title: '🎡 Lucky Wheel', wheel_spin: '🎰 Spin', wheel_back: 'Back',
     wheel_p1: 'New World', wheel_p2: 'Bird Egg', wheel_p3: '100 Coins', wheel_p4: 'Unlock Any Bird', wheel_p5: '10000 Coins',
     wheel_win: '🎉 You won: ', wheel_countdown: 's until next spin',
@@ -2092,8 +2092,15 @@ canvas.addEventListener('click', e => {
     if (mx > topBtnX2(7) && mx < topBtnX2(7) + topBtnW2 && my > topBtnY2 && my < topBtnY2 + topBtnH2) {
       gameState = 'runner'; resetRunner(); return;
     }
+    // Reset progress button
+    if (mx > 356 && mx < 441 && my > 310 && my < 338) {
+      if (confirm(lang === 'zh' ? '确定要重置所有进度吗？（金币、角色、世界、提示将全部清除）' : 'Reset all progress? (Coins, birds, worlds, hints will be cleared)')) {
+        localStorage.clear(); location.reload();
+      }
+      return;
+    }
     // Refresh button
-    if (mx > 362 && mx < 441 && my > 310 && my < 338) {
+    if (mx > 449 && mx < 534 && my > 310 && my < 338) {
       location.replace(location.href.split('?')[0] + '?v=' + Date.now()); return;
     }
     // Start button
@@ -4050,11 +4057,18 @@ function draw() {
     ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 16px "Courier New"'; ctx.textAlign = 'center';
     ctx.fillText(t('label_total_coins') + totalCoins, W/2, 356);
 
+    // Reset progress button
+    const rsbx = 356, rsby = 310, rsbw = 85, rsbh = 28;
+    ctx.fillStyle = '#773333'; ctx.fillRect(rsbx, rsby, rsbw, rsbh);
+    ctx.fillStyle = '#aa4444'; ctx.fillRect(rsbx + 2, rsby + 2, rsbw - 4, rsbh - 4);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px "Courier New"';
+    ctx.fillText(t('btn_reset'), rsbx + rsbw/2, rsby + 19);
+
     // Refresh button
-    const rfbx = 362, rfby = 310, rfbw = 79, rfbh = 28;
+    const rfbx = 449, rfby = 310, rfbw = 85, rfbh = 28;
     ctx.fillStyle = '#335577'; ctx.fillRect(rfbx, rfby, rfbw, rfbh);
     ctx.fillStyle = '#4477aa'; ctx.fillRect(rfbx + 2, rfby + 2, rfbw - 4, rfbh - 4);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px "Courier New"';
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px "Courier New"';
     ctx.fillText(t('btn_refresh'), rfbx + rfbw/2, rfby + 19);
 
     // Start button

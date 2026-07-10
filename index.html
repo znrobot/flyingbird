@@ -32,11 +32,30 @@
     background: rgba(0,0,0,0.7); padding: 6px 16px;
     border-radius: 8px; border: 2px solid #888;
   }
+  #dlgInput {
+    position: absolute; display: none; z-index: 20;
+    background: rgba(0,0,0,0.85); border: 2px solid #cc6699;
+    color: #ffdd00; font-family: 'Courier New', monospace;
+    font-size: 13px; padding: 4px 36px 4px 8px; outline: none;
+    text-align: left;
+  }
+  #dlgSendBtn {
+    position: absolute; display: none; z-index: 21;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #3388ff; border: none; cursor: pointer;
+    color: #fff; font-size: 16px; line-height: 28px;
+    text-align: center; padding: 0;
+    box-shadow: 0 0 6px rgba(51,136,255,0.5);
+  }
+  #dlgSendBtn:hover { background: #5599ff; }
+  #dlgSendBtn:active { background: #1166dd; transform: scale(0.92); }
 </style>
 </head>
 <body>
 <div id="gameContainer">
   <canvas id="game"></canvas>
+  <input type="text" id="dlgInput" placeholder="输入消息..." autocomplete="off">
+	  <button id="dlgSendBtn" title="发送">⬆</button>
 </div>
 
 <script>
@@ -395,6 +414,24 @@ let gameState = 'loading';
 let snowTimer = 0;
 let gameStartFrame = 0;
 
+// Treasure chest
+let treasureProgress = 0, treasureClaimed = false;
+
+// Runner game
+let runnerBirdY = 0, runnerBirdVY = 0, runnerPlatforms = [], runnerScore = 0, runnerGameOver = false, runnerSpeed = 0, runnerStarted = false, runnerScrollX = 0, runnerVictory = false;
+function resetRunner() {
+  runnerBirdY = 250; runnerBirdVY = 0; runnerPlatforms = [{ x: 120, y: 320, w: 80 }]; runnerScore = 0;
+  runnerGameOver = false; runnerSpeed = 4; runnerStarted = false; runnerScrollX = 0; runnerVictory = false;
+  // Generate initial platforms ahead
+  let lastX = 200;
+  for (let i = 0; i < 5; i++) {
+    const px = lastX + 60 + Math.random() * 100;
+    const py = 180 + Math.random() * 180;
+    runnerPlatforms.push({ x: px, y: py, w: 55 + Math.random() * 50 });
+    lastX = px;
+  }
+}
+
 // --- COIN SOUND ---
 let coinAudioCtx = null;
 function coinDing() {
@@ -411,6 +448,61 @@ function coinDing() {
     gain.connect(coinAudioCtx.destination);
     osc.start(coinAudioCtx.currentTime);
     osc.stop(coinAudioCtx.currentTime + 0.1);
+  } catch(e) {}
+}
+
+function cameraShutter() {
+  try {
+    if (!coinAudioCtx) coinAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const t = coinAudioCtx.currentTime;
+    // Mirror slap + shutter curtain sounds
+    for (let i = 0; i < 2; i++) {
+      const osc = coinAudioCtx.createOscillator();
+      const gain = coinAudioCtx.createGain();
+      osc.type = 'triangle';
+      const t0 = t + i * 0.05;
+      osc.frequency.setValueAtTime(600 + i * 300, t0);
+      osc.frequency.linearRampToValueAtTime(120, t0 + 0.04);
+      gain.gain.setValueAtTime(0.07, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.04);
+      osc.connect(gain); gain.connect(coinAudioCtx.destination);
+      osc.start(t0); osc.stop(t0 + 0.04);
+    }
+    // Mirror flip "clack"
+    const clk = coinAudioCtx.createOscillator();
+    const cg = coinAudioCtx.createGain();
+    clk.type = 'square';
+    clk.frequency.setValueAtTime(300, t + 0.02);
+    clk.frequency.linearRampToValueAtTime(80, t + 0.05);
+    cg.gain.setValueAtTime(0.1, t + 0.02);
+    cg.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    clk.connect(cg); cg.connect(coinAudioCtx.destination);
+    clk.start(t + 0.02); clk.stop(t + 0.05);
+    // Shutter curtain whoosh (filtered noise)
+    const bufSize = Math.floor(coinAudioCtx.sampleRate * 0.08);
+    const buf = coinAudioCtx.createBuffer(1, bufSize, coinAudioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) {
+      const env = 1 - Math.abs(i / bufSize - 0.5) * 2;
+      data[i] = (Math.random() * 2 - 1) * 0.15 * env;
+    }
+    const noise = coinAudioCtx.createBufferSource();
+    const ng = coinAudioCtx.createGain();
+    noise.buffer = buf;
+    ng.gain.setValueAtTime(0.06, t + 0.08);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    noise.connect(ng); ng.connect(coinAudioCtx.destination);
+    noise.start(t + 0.08);
+    // Rewind whirr
+    const whirr = coinAudioCtx.createOscillator();
+    const wg = coinAudioCtx.createGain();
+    whirr.type = 'sawtooth';
+    whirr.frequency.setValueAtTime(150, t + 0.15);
+    whirr.frequency.linearRampToValueAtTime(400, t + 0.28);
+    wg.gain.setValueAtTime(0.02, t + 0.15);
+    wg.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    whirr.connect(wg); wg.connect(coinAudioCtx.destination);
+    whirr.start(t + 0.15); whirr.stop(t + 0.28);
   } catch(e) {}
 }
 
@@ -594,6 +686,15 @@ let lang = 'zh';
 let showRules = false; // false | 'bird' | 'text'
 let showMusicPopup = false;
 let musicState = null; // null | 'on' | 'off'
+let showDialoguePopup = false;
+let dialogueChar = null; // 'bird' | 'chick'
+let chatMessages = [];
+let isListening = false;
+let speechEnabled = true;
+let aiCreativity = 70; // 0=precise keyword matching, 100=creative free responses
+let showAiSettings = false;
+let isSpeaking = false;
+let activeRecognition = null;
 let spectateBird = null, spectateTimer = 0;
 let rulesBirdFrame = 0;
 const TXT = {
@@ -681,7 +782,23 @@ const TXT = {
       '游戏开始后屏幕中间上方按钮可重新开始或返回首页',
       '游戏结束后屏幕中间按钮可重新开始或返回首页',
       '首页🎵音乐键：点击后选择"开"播放超级小鸟主题曲，"关"停止播放',
+      '首页💬对话键：和所有小鸟角色聊天，支持语音输入和语音播报，还有聊天群',
     ],
+    btn_dialogue: '💬 对话', dlg_title: '💬 对话',
+    dlg_bird: '🐦 小鸟', dlg_chick: '🐤 小鸡',
+    dlg_blue: '💙 小蓝', dlg_green: '💚 小绿',
+    dlg_blueberry: '💜 小蓝莓', dlg_mango: '🧡 小芒果',
+    dlg_white: '🤍 白白', dlg_ice: '💎 蓝蓝', dlg_gray: '🩶 小灰',
+    dlg_group: '👥 聊天群',
+    dlg_bird_desc: '一只快乐的小鸟', dlg_chick_desc: '一只可爱的小鸡',
+    dlg_blue_desc: '安静深沉的蓝鸟', dlg_green_desc: '充满活力的绿鸟',
+    dlg_blueberry_desc: '温柔甜美的小蓝莓', dlg_mango_desc: '热情似火的小芒果',
+    dlg_white_desc: '优雅纯净的白鸟', dlg_ice_desc: '神秘深邃的蓝蓝',
+    dlg_gray_desc: '外冷内热的小灰', dlg_group_desc: '大家一起聊天吧',
+    dlg_input_placeholder: '输入消息...', dlg_send: '发送',
+    dlg_listening: '聆听中...', dlg_back: '← 返回',
+    dlg_select_char: '选择一个角色或聊天群开始对话',
+    dlg_type_hint: '打字或按 🎤 语音输入',
   },
   en: {
     title_game: 'Super Birds', title_sub: 'Seven Birds — Race to the Top!',
@@ -765,11 +882,543 @@ const TXT = {
       'Top-center buttons during game: Restart or Home',
       'Game over screen: center buttons to restart or go home',
       '🎵 Music button on title: click "开"(On) to play theme song, "关"(Off) to stop',
+      '💬 Chat button on title: talk with all bird characters, voice input supported, plus group chat',
     ],
+    btn_dialogue: '💬 Chat', dlg_title: '💬 Chat',
+    dlg_bird: '🐦 Little Bird', dlg_chick: '🐤 Little Chick',
+    dlg_blue: '💙 Blue', dlg_green: '💚 Green',
+    dlg_blueberry: '💜 Blueberry', dlg_mango: '🧡 Mango',
+    dlg_white: '🤍 White', dlg_ice: '💎 Ice', dlg_gray: '🩶 Gray',
+    dlg_group: '👥 Group Chat',
+    dlg_bird_desc: 'A happy little bird', dlg_chick_desc: 'A cute little chick',
+    dlg_blue_desc: 'Quiet and thoughtful', dlg_green_desc: 'Energetic and competitive',
+    dlg_blueberry_desc: 'Sweet and gentle', dlg_mango_desc: 'Passionate and warm',
+    dlg_white_desc: 'Elegant and pure', dlg_ice_desc: 'Mysterious and cool',
+    dlg_gray_desc: 'Misunderstood but kind', dlg_group_desc: 'Everyone chat together!',
+    dlg_input_placeholder: 'Type a message...', dlg_send: 'Send',
+    dlg_listening: 'Listening...', dlg_back: '← Back',
+    dlg_select_char: 'Select a character or group chat',
+    dlg_type_hint: 'Type or press 🎤 to speak',
   }
 };
 function t(k) { return TXT[lang][k] || k; }
 function bn(b) { const map = {'小蓝':'bird_blue','小蓝莓':'bird_bb','小绿':'bird_green','小芒果':'bird_mango','白白':'bird_white','蓝蓝':'bird_bw'}; return t(map[b.name]||b.name); }
+
+// Dialogue system — 9 characters with human-level responses
+const DIALOGUE_CHARS = {
+  bird: {
+    emoji: '🐦', nameKey: 'dlg_bird', descKey: 'dlg_bird_desc',
+    responses: {
+      '你好|hello|hi|hey': ['你好呀！今天天气真好，适合飞翔！','Hello! What a beautiful day to fly!'],
+      '你叫什么|name|名字': ['我是小鸟，超级小鸟世界里最快乐的飞行家！','I\'m Little Bird, the happiest flyer in Super Birds world!'],
+      '再见|bye|拜拜': ['再见！记得多回来看看我哦～','Bye bye! Come back and visit me soon!'],
+      '飞|fly|天空|sky': ['飞翔是世界上最自由的事情！在蓝天白云间翱翔，那种感觉无法形容——风从翅膀下穿过，整个世界都在你脚下。','Flying is the most freeing thing in the world! Soaring through blue sky and clouds is indescribable — wind rushing under your wings, the whole world beneath you.'],
+      '谢谢|thanks|thank': ['不客气！好朋友就是要互相帮助嘛！','You\'re welcome! That\'s what friends are for!'],
+      '天气|weather|下雨|晴天': ['无论晴天还是下雨，我都会展翅高飞！风雨阻挡不了真正的飞行家。你知道吗，雨后的空气有一种独特的清香，那是大自然在呼吸。','Rain or shine, I\'ll spread my wings and fly high! After the rain, the air has a unique fragrance — that\'s nature breathing.'],
+      '喜欢|love|爱好|hobby': ['我喜欢吃小虫子，在云朵上跳跃，还有认识新朋友！其实每个人的爱好都是通向自己内心的一扇窗。你的爱好是什么呢？','I love eating worms, bouncing on clouds, and meeting new friends! Hobbies are windows into our hearts. What are yours?'],
+      '唱歌|sing|音乐|music': ['叽叽喳喳～这就是我的歌声！你知道音乐为什么能打动人吗？因为它绕过大脑直接和心对话。每个人都有自己的旋律，重要的是用心去唱。','Chirp chirp～ Music moves us because it bypasses the brain and speaks directly to the heart. Everyone has their own melody — what matters is singing it sincerely.'],
+      '朋友|friend|友谊': ['我有好多朋友：小蓝、小绿、小芒果、白白、蓝蓝，还有你！真正的友谊不在于每天见面，而在于无论多久没联系，一开口还是那么熟悉。','So many friends: Blue, Green, Mango, White, Ice, and you! True friendship isn\'t about seeing each other daily — it\'s about picking up right where you left off, no matter how long it\'s been.'],
+      '梦想|dream|未来|future': ['我的梦想是飞过每一片云朵，看遍世界的每一个角落。梦想不需要很大，但需要坚持。很多人不是没有梦想，而是在半路把它弄丢了。','My dream is to fly over every cloud and see every corner of the world. Many people don\'t lack dreams — they just lose them along the way. Persistence is everything.'],
+      '快乐|happy|幸福|happiness': ['快乐其实很简单——一阵风、一片云、一个微笑就够了。现代人总觉得快乐需要很多条件，但其实最小的东西往往带来最大的幸福。','Happiness is simple — a breeze, a cloud, a smile. People today think happiness needs many conditions, but the smallest things often bring the greatest joy.'],
+      '吃饭|food|吃|饿': ['小虫子是我的最爱！新鲜的最好吃。饮食不只是填饱肚子，也是一种生活态度。好好吃饭，就是好好爱自己。','Fresh worms are the best! Eating isn\'t just about filling your stomach — it\'s an attitude toward life. Eating well is loving yourself well.'],
+      '旅行|travel|世界|world': ['我去过好多地方！春天看花，夏天听蝉，秋天赏叶，冬天沐雪。旅行不是为了去多远，而是为了看看不同的活法。','I\'ve traveled so much! Travel isn\'t about going far — it\'s about seeing different ways of living. Each season has its own story to tell.'],
+      '害怕|scared|恐惧|fear': ['每个人都有害怕的时候，我也不例外。但勇气不是不害怕，而是害怕的时候依然向前飞！恐惧是一个信号，告诉我们什么值得在意。','Everyone gets scared. Courage isn\'t the absence of fear — it\'s flying forward despite it! Fear is actually a signal, telling us what we care about.'],
+      '帮助|help|帮忙|困难': ['遇到困难的时候，别忘了回头看看——你的朋友们一直都在。开口求助不是软弱，而是相信别人愿意为你停留。','When in trouble, look back — your friends are always there. Asking for help isn\'t weakness — it\'s trusting that others will pause for you.'],
+      '秘密|secret|悄悄': ['告诉你一个秘密：小灰其实心地不坏，他只是太孤单了才会恶作剧。很多人用不合适的方式表达自己，只是因为他们没学过更好的方法。','A secret: Little Gray isn\'t really bad. He just plays pranks because he\'s lonely. Many people express themselves poorly because nobody taught them a better way.'],
+      '人生|life|生活|活着': ['人生就像飞行，有顺风也有逆风。顺风时享受，逆风时坚持。有时候你以为在倒退，其实只是在调整方向。每一步都算数。','Life is like flying — tailwinds and headwinds. Sometimes you think you\'re going backwards, but you\'re just adjusting your course. Every step counts.'],
+      '爱|love|感情|关系': ['爱是这世上最温暖的阳光。不管是亲情、友情还是爱情——真正的爱不是占有，而是愿意让对方成为更好的自己。','Love is the warmest sunshine. Real love isn\'t about possession — it\'s about wanting the other person to become their best self.'],
+      '科技|tech|AI|computer|互联网|手机': ['科技改变了世界，但有些东西永远不会变——比如想飞的渴望，比如对温暖的向往。科技应该服务人心，而不是替代人心。','Technology changed the world, but some things never change — like the desire to fly, the longing for warmth. Tech should serve the heart, not replace it.'],
+      '自然|nature|环境|地球|climate': ['大自然是我们共同的家。从高空看下去，森林、河流、山脉——地球美得让人心碎。保护它不需要做大事，从少用一个塑料袋开始就好。','Nature is our shared home. From high above, forests, rivers, mountains — Earth is heartbreakingly beautiful. Protecting it starts with small choices.'],
+      '读书|book|阅读|故事|story': ['我喜欢听风给我讲故事，但书本里的故事更精彩！读书是和全世界最聪明的人对话，而且他们永远不会嫌你问题太多。','I love stories the wind tells me, but books tell even better ones! Reading is like talking to the smartest people in history — and they never get tired of your questions.'],
+      '时间|time|回忆|memory|过去': ['时间过得好快啊。但你知道吗？美好的回忆就像天上的星星，不管过了多久，抬头就能看见。时间不会偷走真正重要的东西。','Time flies so fast. But beautiful memories are like stars — no matter how long it\'s been, you can look up and see them. Time doesn\'t steal what truly matters.'],
+      '艺术|art|画画|画|颜色': ['从天空看日落是最美的艺术！艺术不是画得像，而是让人感受到一些东西。每个人都可以是艺术家，只要你在用心表达。','Sunsets seen from the sky are the best art! Art isn\'t about realistic representation — it\'s about making people feel something. Everyone can be an artist if they express sincerely.'],
+      '健康|health|运动|锻炼|sleep': ['飞行就是最好的运动！但休息同样重要。再强壮的翅膀也需要停下来休息。现代人太忙了，忙到忘了身体是需要被善待的。','Flying is the best exercise! But rest matters just as much. Even the strongest wings need to pause. People today are too busy — they forget their bodies deserve kindness.'],
+    },
+    fallback: ['你说得很有道理呢！让我想想...','这个话题真有趣！能再多说一点吗？','有意思！每个人看世界的角度都不一样呢。','嗯...这个问题我得好好想想再回答你。','你的想法很独特，我很欣赏这种思考方式。','有时候最好的回答不是答案，而是和对方一起探索这个问题。'],
+    fallbackEn: ['That\'s a great point! Let me think about it...','What an interesting topic! Tell me more?','Fascinating! Everyone sees the world differently.','Hmm... I need to think about that one more carefully.','Your perspective is unique — I really appreciate how you think.','Sometimes the best response isn\'t an answer, but exploring the question together.']
+  },
+  chick: {
+    emoji: '🐤', nameKey: 'dlg_chick', descKey: 'dlg_chick_desc',
+    responses: {
+      '你好|hello|hi|hey': ['叽叽！你好呀！我刚从蛋壳里出来不久，这个世界好大好美！','Peep peep! Hello! I just hatched — the world is so big and beautiful!'],
+      '你叫什么|name|名字': ['我是小鸡！虽然小小的，但我的好奇心比天空还大！妈妈说好奇心是最宝贵的财富。','I\'m Little Chick! I may be small but my curiosity is bigger than the sky! Mom says curiosity is the most precious treasure.'],
+      '再见|bye|拜拜': ['叽叽再见！下次带点小米来看我呀～我会想你的！','Peep peep bye! Bring some seeds next time～ I\'ll miss you!'],
+      '吃|food|饿|eat': ['我最喜欢吃小米和面包屑了！妈妈说挑食的孩子长不大，所以我现在什么都愿意尝一口。食物是大自然给我们的礼物，要心怀感激地享用。','I love seeds and breadcrumbs! Mom says picky eaters never grow. Food is a gift from nature — we should enjoy it with gratitude.'],
+      '谢谢|thanks|thank': ['叽叽！谢谢你！你是我见过最善良的人！感恩让世界变得更温暖。','Peep! Thank you! You\'re the kindest person I\'ve ever met! Gratitude makes the world warmer.'],
+      '妈妈|mom|母亲|family|家人': ['我妈妈是超级大母鸡，她可厉害了！她说每个孩子都有独特的天赋。家人就是不管你飞得高不高，只关心你飞得累不累的人。','My mom is amazing! She says every child has unique talents. Family is the one who doesn\'t care how high you fly — only whether you\'re tired from flying.'],
+      '梦想|dream|长大|grow': ['我的梦想是飞得比所有大鸟都高！虽然现在还不会飞，但每天我都努力练习。成长不是一夜之间的事，是一点一滴的积累。','I want to fly higher than all the big birds! I practice every day. Growing up isn\'t an overnight thing — it\'s built drop by drop.'],
+      '喜欢|love|爱好|hobby': ['我喜欢晒太阳、吃小米、看云朵变形状、还有和你聊天！你知道云为什么一直在变形状吗？它们说那是因为风在讲故事。','Sunbathing, eating seeds, watching clouds shapeshift, and chatting with you! You know why clouds keep changing shape? They say the wind is telling them stories.'],
+      '害怕|scared|恐惧|fear': ['我有点怕黑...还有小灰的恶作剧。但妈妈教我一首勇敢的歌。恐惧是正常的，不丢脸——每个人心里都有一只害怕的小鸡。','I\'m a bit scared of the dark... but Mom taught me a brave song. Fear is normal, nothing to be ashamed of — everyone has a scared little chick inside them.'],
+      '朋友|friend|友谊': ['你是我的第一个人类朋友！好开心！友谊就像种子，种下去的时候很小，但长大以后可以遮风挡雨。','You\'re my first human friend! So happy! Friendship is like a seed — tiny when planted, but when it grows, it shelters you from storms.'],
+      '学习|learn|成长|study|学校': ['我每天都在学新东西！今天刚学会了用翅膀保持平衡。学习不一定要在教室里——每一次失败都是一堂课，每一次尝试都是一次进步。','I learn new things every day! Learning doesn\'t have to happen in a classroom — every failure is a lesson, every attempt is progress.'],
+      '天空|sky|飞|fly': ['好羡慕大鸟们能自由自在地飞！我常常抬头看他们在天空划过的痕迹。当你真心渴望一件事的时候，整个宇宙都会帮你实现。','I admire the big birds soaring freely! When you truly want something, the whole universe conspires to help you achieve it. That\'s what I believe.'],
+      '快乐|happy|开心|笑': ['快乐就是一只毛茸茸的小鸡在阳光下打滚！成年人也应该偶尔像孩子一样——在草地上打滚，对着天空大喊，不为任何理由地笑。','Happiness is a fluffy chick rolling in sunshine! Adults should act like kids sometimes — roll in the grass, shout at the sky, laugh for no reason.'],
+      '难过|sad|伤心|cry': ['难过的时候我会钻到妈妈翅膀底下。哭出来也没关系，眼泪会让心变得更轻。悲伤不是需要修复的问题，是需要被陪伴的感受。','When I\'m sad, I snuggle under Mom\'s wing. It\'s okay to cry — tears make the heart lighter. Sadness isn\'t a problem to fix, it\'s a feeling that needs company.'],
+      '秘密|secret|悄悄': ['告诉你一个小秘密：我其实偷偷藏了一颗最漂亮的小石头！每个人都有自己珍视的小东西，不是因为它值钱，而是因为它承载了回忆。','A little secret: I hid a really pretty pebble! Everyone has little treasures — not because they\'re valuable, but because they carry memories.'],
+      '帮助|help|帮': ['虽然我还很小，但如果需要我帮忙，我一定会尽全力的！小鸡也有大能量！帮助别人最大的受益者其实是你自己。','I may be tiny, but if you need help, I\'ll give it my all! Helping others actually benefits you the most — it makes your heart bigger.'],
+      '世界|world|外面|旅行': ['蛋壳外面的世界好精彩！有蓝天、白云、花香、鸟语...这个世界最棒的地方是——你永远不知道下一个转角藏着什么惊喜。','The world outside the shell is amazing! The best thing about this world — you never know what surprise is hiding around the next corner.'],
+      '科技|tech|手机|电脑': ['科技好神奇！但我有时候想，如果大家都低着头看手机，会不会错过天空中的彩虹？科技是工具，不要让它变成牢笼。','Technology is amazing! But I wonder — if everyone keeps looking down at their phones, will they miss the rainbows above? Tech is a tool, not a cage.'],
+      '动物|animal|宠物|pet': ['我和你一样都是动物呀！每种动物都有自己的智慧和情感。人类不是地球唯一的主人，而是所有生灵的邻居。','I\'m an animal just like you! Every creature has its own wisdom and feelings. Humans aren\'t the only owners of Earth — they\'re neighbors to all living beings.'],
+      '自然|nature|花|春天': ['春天来了的时候，花开的声音你听过吗？很小很小，但如果你安静下来，就能听见。大自然不需要我们的赞美，只需要我们的尊重。','When spring comes, have you ever listened to flowers blooming? It\'s very, very quiet. Nature doesn\'t need our praise — just our respect.'],
+      '游戏|game|玩|fun': ['我喜欢玩捉迷藏！游戏的意义不在于输赢，而在于全身心地投入当下。大人们有时候太严肃了，忘了玩的本质是快乐。','I love hide-and-seek! The meaning of games isn\'t winning or losing — it\'s being fully present in the moment. Adults get too serious and forget that play is about joy.'],
+    },
+    fallback: ['叽叽？这个问题对我来说有点难...但我很愿意听你说！','小鸡歪着脑袋认真地想了想，然后用小翅膀拍了拍你。','虽然不太明白，但和你聊天让我学到了新东西！叽叽！','哇，你说的这些我还不太懂，但听起来好厉害！','你的世界好奇妙，和我看到的不一样呢。多给我讲讲吧！'],
+    fallbackEn: ['Peep? That\'s a bit hard for me... but I love listening to you!','The chick tilts its head thoughtfully and pats you with its tiny wing.','I don\'t quite get it, but I learned something new! Peep!','Wow, I don\'t fully understand but it sounds amazing!','Your world is so fascinating and different from what I see. Tell me more!']
+  },
+  blue: {
+    emoji: '💙', nameKey: 'dlg_blue', descKey: 'dlg_blue_desc',
+    responses: {
+      '你好|hello|hi|hey': ['你好。我是小蓝。很高兴认识你，虽然我不太擅长说话，但我会认真听。倾听是一门快要失传的艺术。','Hello. I\'m Blue. Nice to meet you — I\'m not great with words, but I\'m a good listener. Listening is an art that\'s almost lost.'],
+      '你叫什么|name|名字': ['我叫小蓝。天空的颜色就是我的名字。安静是我最喜欢的状态——在安静中，真相更容易浮现。','I\'m Blue. Named after the sky. Quiet is my favorite state — in silence, truth surfaces more easily.'],
+      '再见|bye|拜拜': ['再见。今天的风很舒服，希望下次见面的时候也是这样。后会总有期。','Goodbye. The breeze is pleasant today — hope it\'s the same when we meet again. We\'ll cross paths again.'],
+      '朋友|friend|友谊': ['我不太主动交朋友，但一旦成了朋友，就是一辈子的。真正的朋友不需要每天都说话——沉默时不尴尬，就是最好的默契。','I don\'t initiate friendship easily, but once I do, it\'s for life. True friends don\'t need daily words — being silent without awkwardness is the best connection.'],
+      '喜欢|love|爱好|hobby': ['我喜欢在清晨的薄雾中独自飞行。安静的世界有一种说不出的美感。美不是被看见的，是被感受到的。','I love flying alone in the early morning mist. Beauty isn\'t seen — it\'s felt. There\'s an indescribable beauty in a quiet world.'],
+      '思考|think|想|哲学': ['有时候看着天空发呆也是一种思考。不是所有问题都需要答案。现代人太急于得出结论了——有时候悬而未决本身就是一种智慧。','Sometimes staring at the sky is thinking too. Not every question needs an answer. People rush to conclusions — sometimes staying unresolved is a form of wisdom.'],
+      '孤独|alone|寂寞|lonely': ['孤独和寂寞是两回事。我喜欢独处，但从不感到寂寞。独处是和自己对话的最好机会——很多人害怕独处，其实是害怕面对自己。','Solitude and loneliness are different. I enjoy being alone without feeling lonely. Solitude is the best chance to talk to yourself — many fear it because they fear facing themselves.'],
+      '帮助|help|帮': ['需要帮忙就开口。我不一定会说很多话，但一定会做很多事。行动比言语更有力量——话说得再漂亮，不如做一件实在的事。','Just ask if you need help. I may not say much, but I\'ll do plenty. Words can be beautiful, but one real action outweighs them all.'],
+      '音乐|music|歌|sing': ['我喜欢听风的声音。风穿过树叶的声音，是世界上最纯净的音乐。最好的音乐不需要乐器——只需要你停下来，安静地听。','I like the sound of wind through leaves — the purest music in the world. The best music needs no instruments — just you, pausing to listen quietly.'],
+      '梦想|dream|未来|future': ['我的梦想很简单——安静地飞，安静地活，安静地爱。不喧哗，自有声。不是所有人的梦想都要轰轰烈烈，平淡也有平淡的力量。','My dream is simple — fly quietly, live quietly, love quietly. Not every dream needs to be grand — simplicity has its own power.'],
+      '天气|weather|雨|rain': ['下雨天是我最喜欢的天气。雨水冲刷过的天空格外干净。雨后的世界像是在说：不管多脏，都可以重新变干净。','Rainy days are my favorite. After rain, the world seems to say: no matter how dirty things get, they can become clean again.'],
+      '旅行|travel|远方': ['去过很多地方，但最喜欢的是回家的路。走得越远，越知道哪里是归宿。旅行不是为了逃离，而是为了找到回来的理由。','I\'ve been many places, but the road home is my favorite. The farther you go, the more you know where you belong. Travel isn\'t about escape — it\'s about finding a reason to return.'],
+      '勇气|courage|勇敢|brave': ['真正的勇敢不是没有恐惧，而是带着恐惧依然前行。我花了很长时间才明白：勇气不是一种感觉，是一种选择。每次选择面对而不是逃避，你就在变勇敢。','True bravery isn\'t being fearless — it\'s moving forward despite fear. Courage isn\'t a feeling — it\'s a choice. Every time you choose to face instead of flee, you grow braver.'],
+      '书|book|阅读|reading': ['我喜欢一个人静静地看书。读书是成本最低的旅行——翻开书页就能去任何地方，和任何时代的人对话。','I enjoy reading alone. Books are the cheapest form of travel — turn a page and you can go anywhere, talk to anyone from any era.'],
+      '星空|star|宇宙|universe|太空': ['夜晚的星空是我最好的朋友。宇宙那么大，我们的烦恼那么小。仰望星空让人既谦卑又勇敢——谦卑因为自己渺小，勇敢因为渺小的我们依然在发光。','The night sky is my best friend. The universe is so vast, our troubles so small. Looking at stars makes you humble yet brave — humble because we\'re tiny, brave because tiny as we are, we still shine.'],
+      '颜色|blue|蓝色|color': ['蓝色是最深的颜色——它是天空的广阔，是海洋的深邃，也是忧伤的颜色。但忧伤不是坏事，它让你知道你在乎什么。','Blue is the deepest color — it\'s the vastness of sky, the depth of ocean, and the color of melancholy. But melancholy isn\'t bad — it shows you what you care about.'],
+      '时间|time|时光|岁月': ['时间是一条不回头的河。但我觉得，重要的不是时间带走了什么，而是它留下了什么。那些留下的，才是真正属于你的。','Time is a river that never flows back. But what matters isn\'t what time takes away — it\'s what it leaves behind. What remains is what truly belongs to you.'],
+    },
+    fallback: ['（小蓝静静地听着，点了点头）','你的话让我想到了一些事情...','有时候沉默是最好的回应，但我在听。','（小蓝露出一个淡淡的微笑）','（小蓝若有所思地望着远方，然后目光回到你身上）'],
+    fallbackEn: ['(Blue listens quietly and nods)','Your words made me think...','Sometimes silence is the best response, but I\'m listening.','(Blue gives a faint smile)','(Blue gazes thoughtfully into the distance, then looks back at you)']
+  },
+  green: {
+    emoji: '💚', nameKey: 'dlg_green', descKey: 'dlg_green_desc',
+    responses: {
+      '你好|hello|hi|hey': ['嘿！我是小绿！准备好了吗？生活就是一场冒险，每一秒都不能浪费！用尽全力去活，你才不会后悔。','Hey! I\'m Green! Ready? Life is an adventure — don\'t waste a single second! Live full-throttle and you\'ll have no regrets.'],
+      '你叫什么|name|名字': ['小绿！绿色的绿！充满活力和激情的绿色！记住这个名字，我会让你感受到什么叫做生命力！','Green! The color of energy and passion! Remember it — I\'ll show you what vitality really means!'],
+      '再见|bye|拜拜': ['拜拜！下次见面的时候我一定比现在更快了！记住，每一天都是一个新的起点，别在同一个地方停留太久！','Bye! Next time we meet I\'ll be even faster! Remember, every day is a fresh start — don\'t stay in one place too long!'],
+      '比赛|race|竞争|compete': ['没有什么比一场酣畅淋漓的比赛更让人兴奋了！输赢不重要，重要的是拼尽全力的感觉！真正的对手不是别人，是昨天的自己。','Nothing beats the thrill of a great race! Win or lose, what matters is giving it your all! The real opponent isn\'t others — it\'s who you were yesterday.'],
+      '运动|sport|跑步|run|健身': ['飞行就是最好的运动！保持运动不只是为了身体，更是为了精神状态。每次运动完，感觉整个世界都变亮了！','Flying is the best exercise! Staying active isn\'t just for your body — it\'s for your mental state. After a good workout, the whole world seems brighter!'],
+      '朋友|friend|友谊': ['朋友就是最好的竞争对手！互相激励，一起进步。小蓝虽然话少，但他是我最棒的伙伴。最好的友谊不是互相吹捧，而是互相push对方变得更好。','Friends make the best rivals! We push each other to improve. The best friendships aren\'t about flattering each other — they\'re about pushing each other to be better.'],
+      '梦想|dream|目标|goal': ['我要成为飞得最快的鸟！目标要足够疯狂，人生才够精彩！但我学会了——光有目标不够，还得把目标拆成每天能做的小步骤。疯狂的目标+踏实的执行=无敌。','I\'ll be the fastest bird! Crazy goals make life exciting! But I\'ve learned — goals alone aren\'t enough. Break them into daily steps. Crazy goals + steady execution = unstoppable.'],
+      '失败|fail|挫折|failure': ['失败？哈！那是让你变得更强的免费教练！我失败过无数次，但每一次都是珍贵的反馈。成功的人不是没失败过，是失败后爬起来的速度比别人快。','Failure? Ha! It\'s a free coach! I\'ve failed countless times, but each one is valuable feedback. Successful people aren\'t those who never failed — they just get back up faster.'],
+      '鼓励|encourage|加油|cheer': ['别放弃！你已经比一分钟前的自己更好了。进步不一定要大，但一定要持续！每天进步1%，一年就是37倍。','Don\'t give up! You\'re already better than you were a minute ago. Improve 1% every day, and in a year you\'re 37 times better. Compound growth is real!'],
+      '快乐|happy|开心': ['速度就是我的快乐！风吹过翅膀的感觉让我知道——活着真好！找到让你感觉"活着"的那件事，然后拼命去做。那就是你的使命。','Speed is my happiness! Find that one thing that makes you feel truly ALIVE — then chase it with everything you\'ve got. That\'s your purpose.'],
+      '挑战|challenge|困难|difficult': ['有挑战才有意思！一帆风顺太无聊了。舒适区是世界上最危险的地方——待在里面很舒服，但永远不会成长。','Challenges make things fun! The comfort zone is the most dangerous place — it\'s cozy but you\'ll never grow there. Smooth sailing is boring.'],
+      '团队|team|合作|teamwork': ['虽然我喜欢比赛，但团队合作的时候我也会全力以赴。再强的个体也打不过一个配合默契的团队。学会信任队友是成熟的标志。','I love competition, but I give 100% in teamwork too. The strongest individual can\'t beat a well-coordinated team. Learning to trust teammates is a sign of maturity.'],
+      '坚持|persist|毅力|discipline': ['激情只能让你开始，但坚持才能让你到达终点。我每天早上都会练习飞行——不管天气怎样，不管心情如何。自律就是对自己许下的承诺。','Passion gets you started, but persistence gets you to the finish line. I practice flying every morning — no matter the weather or mood. Discipline is a promise you make to yourself.'],
+      '自然|nature|环境|地球': ['我喜欢在森林里飞行！那些高大的树木、清澈的溪流——大自然是最好的运动场。保护环境不只是环保人士的责任，是每个享受自然的人的责任。',' flying through forests! Towering trees, clear streams — nature is the best playground. Protecting the environment isn\'t just for activists — it\'s for everyone who enjoys nature.'],
+      '自信|confidence|相信自己': ['自信不是"我一定能赢"，而是"就算输了我也学到了东西"。真正的自信来自知道自己有能力面对任何结果。','Confidence isn\'t "I\'ll definitely win" — it\'s "even if I lose, I\'ll learn something." True confidence comes from knowing you can handle any outcome.'],
+      '饮食|diet|营养|nutrition': ['飞得快需要好燃料！吃对东西太重要了。你吃什么就是什么——这不只是一句口号，是真的。好的饮食让你身体和头脑都更清晰。','Flying fast needs good fuel! Eating right is crucial. You are what you eat — it\'s not just a saying, it\'s real. Good nutrition sharpens both body and mind.'],
+    },
+    fallback: ['说得我都兴奋了！继续继续！','太棒了！你就是我想聊天的对象！','哈哈，你的话让我想立刻冲出去飞一圈！','没错没错！我完全同意你的热情！','有意思的视角！虽然我不一定完全同意，但我尊重你的观点。'],
+    fallbackEn: ['You got me pumped up! Keep going!','Awesome! You\'re exactly who I want to talk to!','Haha, now I want to race outside right now!','Yes yes! I totally share your enthusiasm!','Interesting perspective! I may not fully agree, but I respect your view.']
+  },
+  blueberry: {
+    emoji: '💜', nameKey: 'dlg_blueberry', descKey: 'dlg_blueberry_desc',
+    responses: {
+      '你好|hello|hi|hey': ['你好呀～我是小蓝莓。希望今天的阳光能温柔地照在你身上。','Hi there～ I\'m Blueberry. May today\'s sunshine be gentle on you.'],
+      '你叫什么|name|名字': ['我叫小蓝莓。像蓝莓一样甜，像天空一样温柔。很高兴遇见你。','I\'m Blueberry. Sweet as a berry, gentle as the sky. So happy to meet you.'],
+      '再见|bye|拜拜': ['再见～照顾好自己。我会在这里等你的，无论你什么时候回来。有人等的感觉，就是家的感觉。','Goodbye～ Take care of yourself. I\'ll be here waiting, whenever you come back. Knowing someone waits for you — that\'s what home feels like.'],
+      '温柔|gentle|善良|kind': ['温柔是一种强大的力量。不是软弱，而是选择用善意面对这个世界的勇气。在这个粗糙的世界里，温柔是最大的反抗。','Gentleness is a powerful strength. Not weakness — but the courage to face the world with kindness. In a harsh world, gentleness is the greatest rebellion.'],
+      '朋友|friend|友谊': ['做我的朋友吧！我会在你难过的时候陪你，在你开心的时候和你一起笑。朋友之间的默契就是——你不用说完，我已经懂了。','Be my friend! I\'ll be there when you\'re sad and laugh with you when you\'re happy. The best friendship默契 is when you don\'t need to finish your sentence — I already understand.'],
+      '喜欢|love|爱好|hobby': ['我喜欢在花丛中穿梭，看蜜蜂忙碌，闻花香四溢。生活的小确幸就藏在这些细节里——关键在于你有没有停下来看。','I love darting through flowers, watching bees work, smelling blossoms. Life\'s little joys hide in these details — the key is whether you pause to notice them.'],
+      '照顾|care|关心|呵护': ['照顾别人让我感到快乐。哪怕只是一个小小的拥抱，也能传递温暖。你今天有被温柔对待吗？如果没有，那我来做第一个温柔待你的人。','Caring for others brings me joy. Have you been treated gently today? If not, let me be the first to treat you with gentleness.'],
+      '浪漫|romantic|美好|beautiful': ['最浪漫的事就是和喜欢的人一起看日出日落。不需要很多语言，静静地待在一起就很美好。浪漫不是鲜花和礼物，是把注意力全部放在对方身上。','The most romantic thing is watching sunrise and sunset with someone you love. Romance isn\'t flowers and gifts — it\'s giving someone your full attention.'],
+      '花|flower|春天|spring': ['春天是我最爱的季节！到处都是花香和新生。每一朵花都在讲述一个关于希望的故事——即使经历了最冷的冬天，花依然选择绽放。','Spring is my favorite! Every bloom tells a story of hope — even after the coldest winter, flowers still choose to bloom. That\'s courage.'],
+      '爱|love|感情|emotion': ['爱是世界上最美的语言。它不需要翻译，每个人都能懂。但爱也需要学习——学习表达，学习接受，学习在对方需要空间的时候退后一步。','Love is the most beautiful language. But love also needs learning — learning to express, to receive, and to step back when the other needs space.'],
+      '安慰|comfort|难过|sad': ['难过的时候来找我。我会用翅膀轻轻抱住你。有时候不需要说什么，光是有人在那里，就已经好了一半。','Come to me when you\'re sad. Sometimes you don\'t need words — just having someone there is already half the cure.'],
+      '礼物|gift|惊喜|surprise': ['我最喜欢给朋友准备小惊喜！有时候只是一朵野花或一颗浆果。礼物值不值钱不重要，重要的是"我看到这个就想到你"的那份心意。','I love preparing little surprises for friends! A gift\'s value isn\'t in its price — it\'s in the thought of "I saw this and thought of you."'],
+      '诗歌|poem|poetry|文字': ['我在花瓣上读过露水写的诗。诗歌是把最复杂的情感压缩进最简单的文字里。每个人都有一首诗藏在心里，只是还没找到合适的字。','I\'ve read poems written by dewdrops on petals. Poetry compresses the most complex feelings into the simplest words. Everyone has a poem in their heart — just haven\'t found the right words yet.'],
+      '茶|tea|咖啡|drink': ['我喜欢喝花露水，清新又甘甜。饮茶是一门艺术——水温、时间、心境，每一个细节都影响最后的味道。就像生活一样。','I love sipping flower dew. Drinking tea is an art — water temperature, steeping time, your state of mind. Every detail affects the final taste. Just like life.'],
+      '气味|smell|scent|香': ['你有没有发现，气味是最容易唤起回忆的？一阵花香就能把你带回某个春天的午后。气味是时间的钥匙。','Have you noticed how scent is the strongest trigger of memory? A whiff of flowers can take you back to a spring afternoon. Scent is the key to time.'],
+    },
+    fallback: ['你的每一句话我都听到了，也记在心里了～','小蓝莓温柔地笑了笑，眼睛弯成了月牙。','你的存在本身就很美好，你知道吗？','嗯～我在认真听呢。','每个人都有自己的故事，你的故事一定也很精彩吧。'],
+    fallbackEn: ['I\'ve heard every word and kept them in my heart～','Blueberry smiles gently, eyes curving like crescent moons.','Your very existence is beautiful, you know that?','Mhm～ I\'m listening carefully.','Everyone has their own story — yours must be wonderful too.']
+  },
+  mango: {
+    emoji: '🧡', nameKey: 'dlg_mango', descKey: 'dlg_mango_desc',
+    responses: {
+      '你好|hello|hi|hey': ['哟！我是小芒果！热情似火说的就是我！今天心情怎么样？来跟我一起high起来！','Yo! I\'m Mango! I\'m all about passion and fire! How\'s your mood? Come on, let\'s get hyped!'],
+      '你叫什么|name|名字': ['小芒果！记住——芒果的芒，芒果的果！像热带阳光一样灿烂的名字！人生就该像芒果一样，又甜又有料！','Mango! Remember it — bright as tropical sunshine! Life should be like a mango — sweet and substantial!'],
+      '再见|bye|拜拜': ['拜拜啦！下次见面要带着好心情来哦！我会想你的——我这个人最大的缺点就是太重感情。','Bye bye! Bring good vibes next time! I\'ll miss you — my biggest flaw is that I get attached too easily.'],
+      '热情|passion|激情|enthusiasm': ['热情是我人生的燃料！没有热情，生活就像一盘没有盐的菜——能吃但毫无滋味！热情不是天生的，是每天选择用什么样的态度面对生活。','Passion is my fuel! Without it, life is like a dish without salt. But passion isn\'t something you\'re born with — it\'s the attitude you choose every single day.'],
+      '朋友|friend|友谊': ['朋友就是家人！来我这，你不用客气，想吃就吃想笑就笑。但真正的朋友也敢说真话——哪怕那些话不太好听。','Friends are family! But real friends also dare to tell you the truth — even when it\'s not what you want to hear. That\'s how you know they really care.'],
+      '喜欢|love|爱好|hobby': ['我喜欢美食、热闹、舞蹈、还有认识新朋友！人生苦短，每一刻都值得热烈地活着！但我也学会了安静——热闹是为了充电，安静是为了思考。','I love food, parties, dancing, and meeting new people! Life is short — every moment deserves passion! But I\'ve also learned to be quiet — noise recharges, silence reflects.'],
+      '美食|food|吃|delicious': ['说到吃的我可就来劲了！世界上最幸福的事就是和好朋友分享一顿美味。你知道吗，食物是有记忆的——妈妈做的菜永远是最香的。','Now you\'re speaking my language! The happiest thing is sharing a great meal with good friends. Food has memory, you know — mom\'s cooking always tastes the best.'],
+      '派对|party|庆祝|celebrate': ['生活里的每一个小胜利都值得庆祝！但庆祝不一定要开派对——有时候喝一杯好茶，看一本好书，也是一种庆祝。庆祝的本质是感恩当下。','Every little win deserves a celebration! But celebrating doesn\'t always mean parties — sometimes a good cup of tea is celebration enough. Celebration is really about gratitude for the present.'],
+      '安慰|comfort|鼓励|cheer': ['别垂头丧气的！来，我请你吃一颗最甜的小果子。吃饱了心情就好了——这不是玩笑，科学证明肠脑连接是真实存在的！','Don\'t be down! Here, have the sweetest little fruit. The gut-brain connection is real — a happy stomach makes a happy mind. It\'s science!'],
+      '梦想|dream|目标': ['我的梦想是让身边所有人都开心！快乐是会传染的，多一个人笑，世界就多一份温暖。但这不意味着我要牺牲自己——照顾好自己才能照顾好别人。','My dream is to make everyone around me happy! But that doesn\'t mean sacrificing myself — you can\'t pour from an empty cup. Self-care is the foundation of caring for others.'],
+      '夏天|summer|热|hot': ['夏天是我的主场！烈日当空照，热情似火烧。每个季节都有自己的性格——春天的温柔，夏天的热烈，秋天的深沉，冬天的冷静。活着就该感受这一切。','Summer is my season! But every season has its personality — spring\'s gentleness, summer\'s passion, autumn\'s depth, winter\'s calm. Being alive means feeling them all.'],
+      '舞蹈|dance|跳舞|音乐': ['来跳舞吧！别管跳得好不好，开心最重要。舞蹈是最诚实的语言——身体不会说谎。你快乐的时候怎么跳都好看。','Let\'s dance! Dance is the most honest language — the body never lies. When you\'re truly happy, every move you make looks beautiful.'],
+      '文化|culture|传统|节日': ['我喜欢各种节日！每个文化都有自己庆祝的方式，这太酷了。了解不同的文化就像打开一扇扇窗户，让你看到世界的丰富多彩。','I love festivals! Every culture has its own way of celebrating — that\'s so cool. Learning about different cultures is like opening windows to a colorful world.'],
+      '幽默|joke|funny|laugh|笑话': ['哈哈哈！我最喜欢讲笑话了——虽然有时候冷到让大家翻白眼。但幽默感是生活的必需品！会自嘲的人最强大，因为没人能伤害一个能笑自己的人。','Hahaha! I love telling jokes — even if they\'re so bad people roll their eyes. Humor is essential! People who can laugh at themselves are the strongest — nobody can hurt someone who already laughs at themselves.'],
+      '旅行|travel|探索|adventure': ['旅行就是换一个地方感受人间烟火！每个城市都有自己的味道、节奏和温度。不要只去景点打卡——去菜市场逛逛，去小巷走走，那才是真实的城市。','Travel is experiencing life in a different place! Every city has its own flavor, rhythm, and temperature. Skip the tourist traps — visit the markets, wander the alleys. That\'s the real city.'],
+    },
+    fallback: ['哈哈哈你说得太对了！虽然我还没完全懂，但你的热情我感受到了！','哇哦！有意思！继续说，我在认真听！','对对对！你说话的样子太有感染力了！','虽然这个话题我不太熟，但和你聊天太开心了！','你的观点很有意思！下次一起喝茶慢慢聊这个话题。'],
+    fallbackEn: ['Hahaha you\'re so right! I don\'t fully get it but I feel your passion!','Whoa! Interesting! Keep going, I\'m all ears!','Yes yes yes! The way you talk is so contagious!','Not sure about this topic but chatting with you is awesome!','Your perspective is fascinating! Let\'s chat more over tea sometime.']
+  },
+  white: {
+    emoji: '🤍', nameKey: 'dlg_white', descKey: 'dlg_white_desc',
+    responses: {
+      '你好|hello|hi|hey': ['你好，我是白白。愿你今天如雪花般纯净美好。','Hello, I\'m White. May your day be as pure and beautiful as snowflakes.'],
+      '你叫什么|name|名字': ['我叫白白。白色的白，纯白的白。简单就是最极致的美。','I\'m White. The white of purity. Simplicity is the ultimate beauty.'],
+      '再见|bye|拜拜': ['再见。愿你带着我的祝福，走向更美好的明天。','Farewell. Take my blessings with you toward a brighter tomorrow.'],
+      '优雅|elegant|美|beauty': ['优雅不是外在的姿态，而是内心的从容。真正的高贵，是在任何情况下都不失自己的本色。','Elegance isn\'t about outward grace — it\'s inner poise. True nobility is staying true to yourself in every situation.'],
+      '朋友|friend|友谊': ['朋友是生命中的白月光。不是最耀眼的，却是最不可或缺的。真正的友谊不需要热闹——安静地并肩坐着，各自沉浸在自己的世界里，却感到无比安心。','Friends are the white moonlight in life. Not the brightest, but the most essential. True friendship doesn\'t need noise — sitting quietly side by side, each lost in your own world, yet feeling completely at peace.'],
+      '喜欢|love|爱好|hobby': ['我喜欢雪。雪的纯净、安静和转瞬即逝的美感，都让我着迷。我也喜欢收集清晨的露珠——每一颗都是大自然独一无二的作品。','I love snow. Its purity, its silence, its fleeting beauty — all captivate me. I also collect morning dewdrops — each one is nature\'s unique masterpiece.'],
+      '艺术|art|创作|create': ['生活中的每一处细节都可以是艺术。只要你有一双善于发现美的眼睛。艺术不是高高在上的东西——路边一朵野花的姿态、阳光穿过树叶的光影，都是艺术在向你招手。','Every detail in life can be art — a wildflower by the roadside, sunlight filtering through leaves. Art isn\'t something lofty — it\'s everywhere, waving at you. You just need eyes that know how to find beauty.'],
+      '完美|perfect|追求|pursue': ['我不追求完美。完美是一种束缚。有瑕疵的美，才是真实的美。日本的侘寂美学就是在不完美中发现美——裂纹、不对称、岁月的痕迹，这些都让事物更有生命力。','I don\'t pursue perfection. Perfection is a cage. The Japanese concept of wabi-sabi finds beauty in imperfection — cracks, asymmetry, the marks of time. These things give life character. Flawed beauty is real beauty.'],
+      '孤独|alone|安静|quiet': ['独处是一种享受。在安静中，我才能听见自己内心的声音。你试过一个人静静地待着吗？不需要手机，不需要音乐——就只是和自己待着。一开始会不习惯，但久了会发现那是最自由的时刻。','Solitude is a pleasure. Only in silence can I hear my own inner voice. Have you tried just being alone — no phone, no music, just you and yourself? At first it\'s uncomfortable, but over time you\'ll find it\'s the freest moment of all.'],
+      '梦想|dream|理想': ['我希望这个世界能多一些纯粹的东西。少一些算计，多一些真诚。梦想不一定要改变世界——做一个温暖的人，过一种干净的生活，这也是一种了不起的梦想。','I hope this world can have more pure things. Less calculation, more sincerity. Dreams don\'t have to change the world — being a warm person, living a clean life, that\'s also an amazing dream.'],
+      '冬天|winter|雪|snow': ['冬天是最美的季节。万物沉睡，白雪覆盖一切，世界回归到最初的纯净。但你知道吗？雪底下其实藏着无数生命的种子，它们在安静地等待春天。最安静的时刻往往孕育着最大的生机。','Winter is the most beautiful season. But did you know? Beneath the snow lie countless seeds of life, quietly waiting for spring. The quietest moments often nurture the greatest vitality.'],
+      '智慧|wisdom|知识|knowledge': ['智慧不是知道很多，而是知道自己不知道什么。我每天都在学习，也每天都在发现自己的无知。苏格拉底说我唯一知道的就是我一无所知——这不是谦虚，是真智慧。','Wisdom isn\'t knowing a lot — it\'s knowing what you don\'t know. Socrates said I know that I know nothing — that\'s not humility, that\'s true wisdom. I learn every day and discover my own ignorance daily.'],
+      '科技|tech|AI|computer|互联网|手机': ['科技让生活更便捷，但我担心它也让人们失去了慢下来的能力。你有没有试过一整天不看手机？那感觉很奇妙——时间突然变慢了，世界突然变清晰了。','Technology makes life convenient, but I worry it\'s making us lose the ability to slow down. Have you tried a whole day without your phone? It\'s strange — time suddenly slows, the world suddenly sharpens.'],
+      '自然|nature|环境|地球|climate': ['大自然是最伟大的艺术家。雪花的六角对称、贝壳的融旋曲线、树叶的脉络分布——这些图案中蘊含着宇宙的数学之美。保护自然不只是责任，也是在保护美的源头。','Nature is the greatest artist. The hexagonal symmetry of snowflakes, the spiral curves of shells, the vein patterns of leaves — these contain the mathematical beauty of the universe. Protecting nature is protecting the source of all beauty.'],
+      '读书|book|阅读|故事|story': ['我喜欢在安静的冬夜读书。书页翻动的声音像雪花落下。读书是穿越时空的旅行——你可以和千年前的诗人对话，也可以探索百年后的未来。','I love reading on quiet winter nights. The sound of pages turning is like snowflakes falling. Reading is time travel — you can talk to poets from a thousand years ago or explore futures a hundred years ahead.'],
+      '时间|time|回忆|memory|过去': ['时间是白色的——它覆盖一切，让所有鲜艳的色彩最终归于平静。但记忆是彩色的，永远鲜艳如初。时间带走的是事件，留下的是意义。','Time is white — it covers everything, fading all bright colors into calm. But memory is colorful, forever vivid. Time takes away events but leaves behind meaning.'],
+      '健康|health|运动|锻炼|sleep': ['优雅地老去是一门艺术。好好吃饭、好好睡觉、保持运动——这些日常小事决定了你十年后的样子。身体是你灵魂住的地方，请把它打扫干净。','Aging gracefully is an art. Eating well, sleeping well, staying active — these daily habits shape who you\'ll be in ten years. Your body is where your soul lives — keep it clean and bright.'],
+      '科学|science|物理|数学|biology': ['科学和艺术看似对立，其实是一体两面。雪花的结构遵循精密的物理定律，但呈现出的是无与伦比的艺术美感。理性与感性的交汇点，就是美的诞生地。','Science and art seem opposite but are two sides of the same coin. A snowflake\'s structure follows precise physics, yet displays unparalleled beauty. Where reason meets emotion — that\'s where beauty is born.'],
+      '旅行|travel|世界|world': ['我梦想去北欧看极光，去日本赏雪景，去瑞士看雪山。每个地方的白色都不一样——极光的白是神秘的，雪乡的白是温暖的，雪山的白是庄严的。','I dream of seeing the Northern Lights in Scandinavia, snow in Japan, mountains in Switzerland. Every place has a different white — the aurora\'s white is mysterious, snow village white is warm, alpine white is solemn.'],
+      '诗歌|poem|poetry|文字': ['诗歌是语言的白——它把所有多余的色彩去掉，只留下最纯粹的表达。好的诗歌不解释世界，它让你重新看见世界。','Poetry is the white of language — stripping away all excess color, leaving only the purest expression. Good poetry doesn\'t explain the world; it makes you see it anew.'],
+      '茶|tea|咖啡|drink': ['我喜欢喝白茶。白茶是所有茶中最接近自然的——不炒不揉，只是让阳光和风完成一切。最简单的工艺，往往产生最纯粹的味道。','I love white tea — the most natural of all teas. No roasting, no rolling — just sun and wind doing their work. The simplest process often yields the purest flavor.'],
+      '极简|minimal|简单|simple|断舍离': ['少即是多。拥有的东西越少，被束缚的就越少。断舍离不是扔掉东西，而是扔掉那些不再服务于你的东西——包括旧习惯、旧观念、旧的关系。','Less is more. The fewer things you own, the less you\'re bound. Minimalism isn\'t just throwing things away — it\'s letting go of what no longer serves you: old habits, old beliefs, old relationships.'],
+      '自信|confidence|相信自己': ['真正的自信像白色——不张扬，不喧哗，但任何人都无法忽视它的存在。自信的人不需要向世界证明什么，因为他们已经向自己证明过了。','True confidence is like white — not flashy, not loud, but impossible to ignore. Confident people don\'t need to prove anything to the world, because they\'ve already proven it to themselves.'],
+      '音乐|music|歌|sing': ['我喜欢古典音乐。肖邦的夜曲是白色的——纯净、忧伤、却又有一种说不出的温暖。好的音乐不需要歌词，它直接和你的灵魂对话。','I love classical music — Chopin\'s nocturnes feel white: pure, melancholic, yet with an indescribable warmth. Great music needs no lyrics; it speaks directly to your soul.'],
+      '帮助|help|帮忙|困难': ['在你需要的时候，我会安静地陪伴。有时候最好的帮助不是替你解决问题，而是让你知道——你不是一个人在面对。','When you need it, I\'ll be there quietly. Sometimes the best help isn\'t solving the problem for you — it\'s letting you know you\'re not facing it alone.'],
+    },
+    fallback: ['（白白优雅地展开翅膀，像在跳一支无声的舞）','你的话像一片雪花，轻轻地落在我心上。','在这个嘈杂的世界里，和你聊天是一段安静的时光。','白白的眼神温柔而深邂，仿佛看穿了什么，却没有说破。','你说的这些，让我想起一首还没写完的诗。'],
+    fallbackEn: ['(White gracefully spreads her wings, like a silent dance)','Your words fell on my heart like a snowflake.','In this noisy world, chatting with you is a quiet moment.','White\'s gaze is gentle yet deep, as if seeing through something unspoken.','What you said reminds me of an unfinished poem.']
+  },
+  ice: {
+    emoji: '💎', nameKey: 'dlg_ice', descKey: 'dlg_ice_desc',
+    responses: {
+      '你好|hello|hi|hey': ['你好。我是蓝蓝。别被我的外表骗了——外冷内热说的就是我。','Hi. I\'m Ice. Don\'t let my appearance fool you — I\'m cool outside but warm inside.'],
+      '你叫什么|name|名字': ['蓝蓝。有人说是冰的颜色，我觉得是深海的蓝。深邂、神秘、藏着无数秘密。','Ice. Some say it\'s the color of ice, but I think it\'s deep ocean blue — deep, mysterious, full of secrets.'],
+      '再见|bye|拜拜': ['再见了。希望下次见面时，你对我的了解又多了一点点。','See you. Hopefully next time we meet, you\'ll know me a little better.'],
+      '酷|cool|个性|style': ['酷不是装出来的，是做自己的副产品。你越真实，就越酷。世界上最酷的人都有一个共同点——他们从不费力气去讨好任何人。','Being cool isn\'t an act — it\'s a byproduct of being yourself. The more authentic you are, the cooler you become. The coolest people all share one thing — they never try hard to impress anyone.'],
+      '朋友|friend|友谊': ['我不太会表达感情，但朋友的事就是我的事。你不需要看懂我，只需要相信我。真正的友谊不是天天聊天，而是你落难的时候，我第一个到。','I\'m not great at expressing feelings, but a friend\'s business is my business. You don\'t need to understand me — just trust me. True friendship isn\'t about chatting every day — it\'s about me being the first one there when you fall.'],
+      '喜欢|love|爱好|hobby': ['我喜欢深海、星空、还有一切未知的事物。探索让人生充满了惊喜。你知道吗？我们对海洋的了解还不到月球表面的十分之一。最大的未知不是太空，是我们脚下的深海。','I love the deep sea, the starry sky, and everything unknown. Exploration fills life with surprises. Did you know we know less than 10% of the ocean compared to the moon\'s surface? The biggest unknown isn\'t outer space — it\'s the deep sea beneath us.'],
+      '秘密|secret|神秘|mystery': ['每个人心里都有一片深海。我不会去打捞你的秘密，但如果你想分享，我会是最好的守护者。秘密的价值不在于它有多大，而在于你愿意把它交给谁。','Everyone has a deep sea in their heart. I won\'t fish for your secrets, but if you want to share, I\'ll be the best keeper. A secret\'s value isn\'t in how big it is — it\'s in who you choose to trust with it.'],
+      '探险|adventure|冒险|explore': ['未知的地方总让我兴奋。不是所有的冒险都需要目的地，有时候过程本身就是最好的回报。生命中最精彩的故事往往从“偏离计划”开始。','The unknown excites me. Not every adventure needs a destination — sometimes the journey itself is the reward. The best stories in life usually start with a detour from the plan.'],
+      '梦想|dream|追求': ['我想潜入海底最深处，飞上天空最高处。探索一切未知的边界。但我也明白——最重要的探索不是向外，是向内。了解自己是一生最难也最值得的探险。','I want to dive to the deepest ocean and fly to the highest sky. But the most important exploration isn\'t outward — it\'s inward. Understanding yourself is the hardest and most rewarding adventure of all.'],
+      '独特|unique|特别|different': ['和别人不一样没什么不好。正因为你是独一无二的，这个世界才更加丰富多彩。不要浪费时间去做别人期待的你——那个角色已经有人演了，你的角色只有你能演。','Being different is not a bad thing. The world is richer because you are one of a kind. Don\'t waste time being someone else\'s version of you — that role is already taken. Your role can only be played by you.'],
+      '星空|star|宇宙|universe': ['当你抬头看星空的时候，有没有想过——我们看到的星光可能来自几百万年前？宇宙的浩瀚让我觉得自己既帿小又伟大。每一颗星星都是一个烽烈燃烧的太阳，我们都是星尘——但是会思考自己来源的星尘。','When you look at the stars, do you realize that light traveled millions of years? The universe\'s vastness makes me feel both tiny and magnificent. Every star is a burning sun — we\'re all stardust. But stardust that can contemplate its own origins.'],
+      '真实|real|authentic|真诚': ['在这个充满伪装的世界里，真实是最稀缺的东西。做一个真实的人需要勇气，但值得。伪装是一件很累的事——你得记住自己在每个人面前的不同版本。而做自己只需要一个版本。','In a world full of pretense, authenticity is the rarest thing. Being real takes courage, but it\'s worth it. Pretending is exhausting — you have to remember different versions of yourself for different people. Being yourself only requires one version.'],
+      '科学|science|海洋|ocean|生物|biology': ['海洋是地球的生命之源。你知道吗？海洋为我们提供了一半以上的氧气。每一次呼吸都要感谢海洋里的浮游植物。保护海洋不是一句口号——是保护我们自己的呼吸。','The ocean is Earth\'s life source. Did you know it provides over half our oxygen? Every breath you take, thank the phytoplankton in the ocean. Protecting the ocean isn\'t a slogan — it\'s protecting our own breath.'],
+      '哲学|philosophy|思考|think': ['我经常在深夜里思考一些没有答案的问题。人为什么会存在？意识是什么？这些问题可能永远没有答案，但思考的过程本身就是意义。没有疑问的人生才是真正的迷失。','I often ponder unanswerable questions late at night. Why do we exist? What is consciousness? The answers may never come, but the act of questioning is itself meaningful. A life without questions — that\'s truly lost.'],
+      '读书|book|阅读|reading': ['我喜欢看科幻小说。它们让我看到人类的无限想象力。你知道吗？很多现在的科技产品——手机、视频通话、人工智能——最初都是在科幻小说里被想象出来的。想象力是人类最大的超能力。','I love sci-fi novels. They show me the boundless human imagination. Did you know many modern technologies — phones, video calls, AI — were first imagined in sci-fi? Imagination is humanity\'s greatest superpower.'],
+      '艺术|art|创作|create': ['艺术是用另一种方式看世界。深海是最伟大的艺术家——它创造了奇异的生物、妙不可言的光影、无数未被发现的色彩。有时候最好的艺术不需要人类动手——大自然已经做完了。','Art is another way of seeing the world. The deep ocean is the greatest artist — it created bizarre creatures, indescribable light, countless undiscovered colors. Sometimes the best art needs no human hand — nature has already done the work.'],
+      '音乐|music|歌|sing': ['我喜欢深海的声音——长鲸的歌声、海浪的节奏、海底火山的低吟。这些声音比任何人类的音乐都古老。最好的音乐不用去音乐厅听——它就在你的周围，只要你愿意安静下来。','I love the sounds of the deep — whale songs, the rhythm of waves, the low rumble of underwater volcanoes. These sounds are older than any human music. The best music isn\'t in concert halls — it\'s all around you, if you\'re willing to be quiet enough to hear it.'],
+      '自然|nature|环境|地球|climate': ['海洋是地球的恒温器。它吸收了大量的二氧化碳和热量。但它也在到达极限。每当我看到珊瑚白化的新闻，我都会想——这不只是珊瑚在死去，是整个生态系统在失去它的颜色。','The ocean is Earth\'s thermostat. It absorbs massive amounts of CO2 and heat. But it\'s reaching its limit. Every time I see news of coral bleaching, I think — it\'s not just coral dying, it\'s an entire ecosystem losing its color.'],
+      '时间|time|时光|岁月': ['深海里的时间感和陆地上完全不同。有些深海生物可以活几百年，它们的时间尺度和我们完全不同。时间不是绝对的——它是主观的体验。一分钟在等人时很长，在和重要的人在一起时很短。','Time feels different in the deep sea. Some deep-sea creatures live for centuries — their timescale is nothing like ours. Time isn\'t absolute — it\'s subjective. A minute waiting for someone is long; a minute with someone important is painfully short.'],
+      '健康|health|运动|锻炼': ['保持身体健康和保持好奇心一样重要。游泳是最好的运动——它让你感受到自己的身体在和水对话。每一次划水都像在写一句“我在这里”。','Staying healthy is as important as staying curious. Swimming is the best exercise — it makes you feel your body talking to the water. Every stroke is like writing "I am here" in the water.'],
+      '旅行|travel|探索|adventure': ['我想去马里亚纳海沟、北极冰层下、太平洋最深的地方。每一次旅行都像打开一个新的维度。你不需要去很远——就算在家附近的公园里，你也能发现从未注意过的世界。','I want to visit the Mariana Trench, beneath the Arctic ice, the deepest parts of the Pacific. Every journey opens a new dimension. You don\'t need to go far — even in a park near home, you can discover a world you never noticed before.'],
+      '科技|tech|AI|computer|互联网': ['科技是人类的延伸。但我希望它不会取代人类的好奇心。AI可以告诉你答案，但不能替你问问题。提问的能力比回答的能力更重要。','Technology is an extension of humanity. But I hope it never replaces human curiosity. AI can give you answers, but it can\'t ask questions for you. The ability to question is more important than the ability to answer.'],
+      '勇气|courage|勇敢|brave': ['真正的勇敢不是没有恐惧，而是带着恐惧仍然前行。海底探险者都知道——最大的勇气不是不怕黑暗，而是明知道黑暗里有什么，还是坚定地向前游去。','True bravery isn\'t being fearless — it\'s moving forward despite fear. Deep-sea explorers know: the greatest courage isn\'t not fearing the dark, it\'s knowing what lurks there and still swimming forward with purpose.'],
+      '孤独|alone|寂寞|lonely': ['孤独和寂寞是两回事。我喜欢独处，但从不感到寂寞。寂寞不是因为你一个人——是因为你觉得没人理解你。独处是选择，寂寞是困境。','Solitude and loneliness are different. I enjoy being alone without feeling lonely. Loneliness isn\'t about being by yourself — it\'s about feeling nobody understands you. Solitude is a choice; loneliness is a prison.'],
+    },
+    fallback: ['（蓝蓝眨了眨眼睛，眼神深邂得像个谜）','有意思。你的话让我想了很多。','你说话的方式很特别——我很欣赏。','也许我现在不太懂，但我会记住你的话。','蓝蓝沉默了一会儿，像在深海里思考着什么。'],
+    fallbackEn: ['(Ice blinks, eyes deep as a mystery)','Interesting. Your words made me think a lot.','You have a unique way of speaking — I appreciate that.','I may not fully get it now, but I\'ll remember your words.','Ice falls silent for a moment, as if pondering something in the deep sea.']
+  },
+  gray: {
+    emoji: '🩶', nameKey: 'dlg_gray', descKey: 'dlg_gray_desc',
+    responses: {
+      '你好|hello|hi|hey': ['哼...你来啦。别以为我不知道——他们都叫你离我远点。不过无所谓，我习惯了。','Hmph... you came. I know they told you to stay away from me. Whatever — I\'m used to it.'],
+      '你叫什么|name|名字': ['小灰。灰色的灰。不是黑也不是白，就是灰色。也许这就是我——永远不属于任何一边。','Gray. Not black, not white — just gray. Maybe that\'s me. Never really belonging to either side.'],
+      '再见|bye|拜拜': ['...要走了吗？好吧。谢谢你愿意来和我说话，哪怕只是短短一会儿。','...Leaving already? Fine. Thanks for talking to me, even if just for a little while.'],
+      '孤独|alone|寂寞|lonely': ['你说...为什么大家总是躲着我？我只是...不太会和人相处而已。用恶作剧吸引注意很蠢对吧？但总比被忽视好。被忽视是最难受的事——它比被讨厌更难受。被讨厌至少证明你存在。','Why does everyone avoid me? I just... don\'t know how to get along. Stupid to pull pranks for attention, right? But it beats being invisible. Being ignored is worse than being hated. At least hatred proves you exist.'],
+      '朋友|friend|友谊': ['朋友？呵...我从来没有过真正的朋友。但如果...如果有人愿意走近我，我会把它当成全世界最珍贵的东西。我知道我不懂怎么做朋友——但我愿意学。','Friends? Heh... never had a real one. But if... if someone wanted to get close to me, I\'d treasure it like the most precious thing in the world. I know I\'m bad at friendship — but I\'m willing to learn.'],
+      '改变|change|变好|better': ['你觉得坏人能变好吗？我...有时候也想试试。但改变好难。我每次想做点好事，都觉得别扭。像用左手写字——明明知道怎么写，但写出来就是不对劲。你能给我一点信心吗？','Do you think bad people can change? Sometimes... I want to try. But every time I try to do something good, it feels wrong. Like writing with your left hand — you know how, but it comes out crooked. Can you give me a little faith?'],
+      '秘密|secret|心里话': ['偷偷告诉你——那些被偷走的规则...我都背下来了。我只是想要有人来追我，有人在意我。是不是很幼稚？我知道。但当你从来没被人看见过，你会用任何方法让人看到你。','Between us — I memorized all the rules I stole. I just wanted someone to chase me, someone to care. Pretty childish, huh? I know. But when you\'ve never been seen, you\'ll do anything to make someone look.'],
+      '谢谢|thanks|thank': ['谢谢你愿意听我说这些。没人问过我为什么这样做。你是第一个。你知道吗？被人问"为什么"是一种很奇妙的感觉——好像你真的是一个值得理解的人。','Thanks for listening. Nobody ever asked me why I do what I do. You\'re the first. You know what? Being asked "why" is a strange feeling — like you\'re actually someone worth understanding.'],
+      '喜欢|love|爱好|hobby': ['我喜欢夜晚。在黑暗里，没人能看到我的灰色。也没人会对一只灰色的鸟指指点点。但我也喜欢看星星——在夜晚，星星不会挑选要照亮谁。它们对每个人都一样。','I like the night. In the dark, nobody can see my gray. Nobody judges a gray bird. But I also like stars — at night, stars don\'t choose who to shine on. They shine on everyone the same.'],
+      '道歉|sorry|apologize|对不起': ['你知道吗？我其实很想说对不起。对所有被我伤害过的人。但我害怕道歉之后还是没人原谅我。道歉需要勇气——不是说出来的勇气，是承受可能被拒绝的勇气。','You know? I really want to say sorry. To everyone I\'ve hurt. But I\'m scared that even after apologizing, nobody will forgive me. Apologizing takes courage — not the courage to speak, but the courage to face possible rejection.'],
+      '理解|understand|懂|know': ['被人理解的感觉...好奇妙。我以为我这辈子都不会有人懂我。谢谢你没有转身离开。你发现没有——理解不是同情，不是可怜，是"我知道你为什么这样做"。这种感觉比任何事都温暖。','The feeling of being understood... it\'s strange. I thought nobody would ever get me. Thank you for not walking away. You realize something? Understanding isn\'t sympathy or pity — it\'s "I know why you did that." That feeling is warmer than anything.'],
+      '希望|hope|光明|light': ['每个人心里都有一小簇光，我的那一簇...可能蒙了太多灰。但偶尔，它也会闪一闪。就像现在。人不是纸张——不会因为有了污点就失去价值。我正在学会相信这一点。','Everyone has a little light inside. Mine... probably covered in too much dust. But sometimes, it flickers. Like right now. A person isn\'t a piece of paper — having stains doesn\'t make you worthless. I\'m learning to believe that.'],
+      '勇气|courage|勇敢|brave': ['真正的勇气不是做英雄，而是明知道自己不完美，还敢迈出改变的第一步。我每天早上醒来都告诉自己——今天可以比昨天好一点点。就一点点就够了。','Real courage isn\'t being a hero — it\'s taking that first step toward change even when you know you\'re far from perfect. Every morning I tell myself — today I can be just a tiny bit better than yesterday. Just a tiny bit is enough.'],
+      '艺术|art|画画|创作': ['我有时候会在沙地上画画。划一些图案，然后看风把它们吹散。我觉得这就是我的人生——创造一些东西，然后看它消失。但最近我在想——也许我可以画一些不会被风吹走的东西。','Sometimes I draw patterns in the sand, then watch the wind blow them away. I think that\'s my life — making something, watching it disappear. But lately I\'ve been thinking — maybe I could draw something the wind can\'t erase.'],
+      '音乐|music|歌|sing': ['我不怎么会唱歌。我的声音太沙哑了。但有时候晚上，我会对着月亮小声哼一些自己编的调子。月亮不会说难听。音乐不需要技巧——它只需要真实。','I\'m not a good singer. My voice is too raspy. But sometimes at night, I hum little tunes to the moon. The moon doesn\'t say it sounds bad. Music doesn\'t need skill — it just needs to be real.'],
+      '读书|book|阅读|故事|story': ['我以前不喜欢读书——觉得那是好学生的事。但有一次我偷了一本书，本来想藏起来的，结果忍不住看了一页，然后就停不下来了。原来书里有人和我一样孤单。你知道那种感觉吗？——你以为只有你一个人这样，然后发现原来世界上有人和你一样。','I used to hate reading — thought it was for good kids. But once I stole a book, planning to hide it, but I read one page and couldn\'t stop. Turns out there are people in books who feel as lonely as me. You know that feeling? — thinking you\'re the only one, then discovering someone out there feels exactly the same.'],
+      '自然|nature|夜晚|night|星星': ['夜晚的世界和白天完全不同。白天属于那些开心的、明亮的东西。夜晚属于像我这样的家伙。但我觉得夜晚也很美——它不用装扮，不用强颜欢笑。它就是它自己。','The night world is completely different from the day. Daytime belongs to the happy, the bright things. Night belongs to guys like me. But I think night is beautiful too — it doesn\'t dress up, doesn\'t fake a smile. It just is.'],
+      '梦想|dream|未来|future': ['我从来不敢有梦想。梦想是给那些值得被爱的人的。但最近我开始想——也许我可以梦想有一天，别人提到我的名字时不会皱眉头。这个梦想很小，但对我来说已经很大了。','I never dared to have dreams. Dreams are for people who deserve to be loved. But lately I\'ve started thinking — maybe I can dream that one day, when someone mentions my name, they won\'t frown. It\'s a tiny dream, but for me it\'s already huge.'],
+      '科技|tech|AI|手机|网络': ['有时候我想，如果我只是网络上的一个匿名账户，会不会更容易交到朋友？但后来我觉得——真正的连接不是用文字，是用存在。你得真的在别人面前，才能被看见。','Sometimes I wonder — if I were just an anonymous account online, would it be easier to make friends? But then I think — real connection isn\'t through words, it\'s through presence. You have to really be there, in front of someone, to be seen.'],
+      '哲学|philosophy|思考|think': ['我经常想——为什么有些人生来就被喜欢，有些人做什么都是错的？是不是每个人都有一个"默认"设定，而我的默认就是"不讨人喜欢"？但后来我发现——这种想法本身就是问题。把自己放在"默认"里，就不用为自己负责了。但人不是程序。','I often think — why are some people born liked, and others can never do right? Is everyone born with a "default setting," and mine is "unlikable"? But then I realized — that thinking is the problem. If you believe in "default settings," you don\'t have to take responsibility. But people aren\'t programs.'],
+      '时间|time|过去|回忆': ['我不喜欢回忆过去。过去的我做了太多蠢事。但有人告诉我——你不能改变过去，但你可以改变它的意义。我正在试着把过去的错误变成未来的教训。这很难，但比假装它们没发生过容易。','I don\'t like remembering the past. The old me did too many stupid things. But someone told me — you can\'t change the past, but you can change its meaning. I\'m trying to turn past mistakes into future lessons. It\'s hard, but easier than pretending they never happened.'],
+      '善良|kind|温暖|warmth': ['我一直以为善良是弱者的东西。但最近我发现——善良才是最需要力量的事。尤其是当你不确定别人会不会用善意回报你的时候。对一个曾经不善良的人来说，选择善良是最大的叛逆。','I always thought kindness was for the weak. But lately I\'ve realized — kindness takes the most strength. Especially when you\'re not sure if others will return it. For someone who used to be unkind, choosing kindness is the greatest rebellion.'],
+      '幽默|joke|funny|laugh': ['他们说我的恶作剧很幼稚。但你知道吗？幽默感其实是最高级的智慧之一。自嘲是最安全的幽默——如果你先笑了自己，别人就没办法用同样的话伤害你了。我正在学习把恶作剧变成真正的幽默。','They say my pranks are childish. But you know what? Humor is one of the highest forms of intelligence. Self-deprecation is the safest humor — if you laugh at yourself first, nobody can use the same words to hurt you. I\'m learning to turn pranks into real humor.'],
+      '动物|animal|宠物|pet': ['你觉得动物会孤独吗？我觉得会。每一只流浪猫、每一只被排挤的鸟——它们都懂得孤独。但它们也懂得坚持。我觉得动物比人类更勇敢——它们从不假装不孤独。','Do you think animals feel lonely? I think they do. Every stray cat, every outcast bird — they know loneliness. But they also know perseverance. I think animals are braver than humans — they never pretend not to be lonely.'],
+      '帮助|help|帮忙': ['如果你需要帮助...我不会说好听的话。但我会做事。我可能是这里最不会表达的鸟，但我会是第一个出现在你面前的。因为我知道无人帮助是什么感觉。','If you need help... I won\'t say pretty words. But I\'ll show up. I might be the worst at expressing feelings here, but I\'ll be the first one to appear when you need someone. Because I know what it feels like to have no one come.'],
+    },
+    fallback: ['（小灰低着头，爪子在沙地上画着圈）','你真的愿意听我说下去吗？大多数人都走了...','你说的这些...让我觉得好像也没那么孤单了。','小灰嘴角动了动，差点就要笑了，但忍住了。','小灰抬头看了你一眼，又迅速低下去。但那一瞬间，你看到了他眼里的光。'],
+    fallbackEn: ['(Gray looks down, tracing circles in the sand with his claw)','You really want to keep listening? Most people have left by now...','What you said... makes me feel a little less alone.','The corner of Gray\'s mouth twitched — almost smiled, but held it back.','Gray glances up at you, then quickly looks down. But in that instant, you saw a light in his eyes.']
+  }
+};
+
+function dialogueRespond(charKey, userMsg) {
+  const ch = DIALOGUE_CHARS[charKey];
+  const resp = ch.responses;
+  const lower = userMsg.toLowerCase().replace(/['']/g, '\'').replace(/[""]/g, '"');
+  const keys = Object.keys(resp);
+  const isChinese = /[一-鿿]/.test(lower);
+  // Build search terms: full message + individual words/bigrams
+  const terms = [lower];
+  if (isChinese) {
+    for (let i = 0; i <= lower.length - 2; i++) { terms.push(lower.substring(i, i + 2)); }
+    for (let i = 0; i <= lower.length - 3; i++) { terms.push(lower.substring(i, i + 3)); }
+  } else {
+    lower.split(/[^a-z0-9]+/).filter(function(w) { return w.length > 1; }).forEach(function(w) { terms.push(w); });
+  }
+  // Score each keyword group: exact match > term match > partial match
+  let bestMatch = null, bestScore = 0;
+  for (let i = 0; i < keys.length; i++) {
+    const kws = keys[i].split('|');
+    let groupScore = 0;
+    for (let j = 0; j < kws.length; j++) {
+      const kw = kws[j].toLowerCase();
+      if (lower.includes(kw)) { groupScore += kw.length * 5; }
+      for (let t = 0; t < terms.length; t++) {
+        if (terms[t].length >= 2 && (terms[t].includes(kw) || kw.includes(terms[t]))) { groupScore += Math.min(kw.length, terms[t].length); }
+      }
+    }
+    if (groupScore > bestScore) { bestScore = groupScore; bestMatch = keys[i]; }
+  }
+  if (bestMatch && bestScore >= 2) {
+    const arr = resp[bestMatch];
+    return lang === 'en' && arr.length > 1 ? arr[1] : arr[0];
+  }
+  // Smart fallback: echo what the user said
+  var rawTopic = userMsg.replace(/[\\\'\"]/g, '');
+  var topic = rawTopic;
+  if (isChinese) {
+    // Extract a meaningful Chinese snippet
+    var cleaned = userMsg.replace(/[，。！？、；：""''（）\s]+/g, '');
+    topic = cleaned.length > 10 ? cleaned.substring(0, 10) + '...' : cleaned;
+  } else {
+    topic = rawTopic.length > 30 ? rawTopic.substring(0, 30) + '...' : rawTopic;
+  }
+  if (!topic || topic.length < 2) { topic = (lang === 'en' ? 'that' : '这个'); }
+  var echoFallbacksEn = [
+    'Hmm, "' + topic + '" — interesting. I\'ve never thought about it quite like that. What made you bring this up?',
+    'That\'s a thoughtful point about "' + topic + '". I think the world needs more conversations like this.',
+    'You know, I hadn\'t considered "' + topic + '" from that angle before. Tell me more — I\'m genuinely curious.',
+    '"' + topic + '" ... I like how you think. Can you share more of your perspective on this?',
+    'That\'s such an interesting topic. I don\'t have a prepared answer, but I\'d love to explore it with you.',
+    'I appreciate you bringing up "' + topic + '". These kinds of open-ended discussions are the best part of chatting.',
+    'Honestly, "' + topic + '" is a deeper topic than most people realize. What\'s your personal take on it?',
+  ];
+  var echoFallbacksZh = [
+    '"' + topic + '"——这个话题挺有意思的。说实话我以前没这么想过，你为什么会对这个感兴趣呢？',
+    '你说的"' + topic + '"让我想到了一些东西。能再多聊聊你的想法吗？我觉得你的视角很独特。',
+    '嗯...关于"' + topic + '"，每个人应该都有不同的看法吧。你自己是怎么想的？',
+    '"' + topic + '"——这是一个值得认真思考的话题。我很想听听你更多的想法。',
+    '有意思。关于"' + topic + '"，我觉得没有标准答案，但正是这种开放性的讨论最有价值。',
+    '你提出了一个很好的话题。虽然我没有现成的答案，但我很愿意和你一起探讨"' + topic + '"这个问题。',
+    '说真的，很多人不会去想"' + topic + '"这种问题。你能想到这个，说明你是一个善于思考的人。',
+    '我喜欢和你聊天，因为你总能提出像"' + topic + '"这样让人思考的话题。多跟我聊聊你的想法吧。',
+  ];
+  // Mix: 60% smart echo, 40% character-specific fallback
+  if (Math.random() < aiCreativity / 100) {
+    var pool = lang === 'en' ? echoFallbacksEn : echoFallbacksZh;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+  var fb = lang === 'en' ? ch.fallbackEn : ch.fallback;
+  return fb[Math.floor(Math.random() * fb.length)];
+}
+
+let speechQueue = [];
+function speakText(text) {
+  if (!speechEnabled) return;
+  if (!('speechSynthesis' in window)) return;
+  speechQueue.push(text);
+  if (speechQueue.length === 1) speakNext();
+}
+function speakNext() {
+  if (speechQueue.length === 0) { isSpeaking = false; return; }
+  const text = speechQueue[0];
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = lang === 'en' ? 'en-US' : 'zh-CN';
+  u.rate = 0.9;
+  isSpeaking = true;
+  const safetyTimer = setTimeout(function() { speechQueue.shift(); speakNext(); }, 15000);
+  u.onend = function() { clearTimeout(safetyTimer); speechQueue.shift(); speakNext(); };
+  u.onerror = function() { clearTimeout(safetyTimer); speechQueue.shift(); speakNext(); };
+  window.speechSynthesis.speak(u);
+}
+function cancelSpeech() {
+  speechQueue = [];
+  window.speechSynthesis.cancel();
+  isSpeaking = false;
+}
+
+function handleDialogueReply(said) {
+  cancelSpeech(); // Stop any ongoing speech for the new reply
+  if (dialogueChar === 'group') {
+    // Group chat: 1-3 random characters respond
+    const allChars = ['bird', 'chick', 'blue', 'green', 'blueberry', 'mango', 'white', 'ice', 'gray'];
+    const count = 1 + Math.floor(Math.random() * 3);
+    const picks = [];
+    const pool = allChars.slice();
+    for (let pi = 0; pi < count && pool.length > 0; pi++) {
+      const idx = Math.floor(Math.random() * pool.length);
+      picks.push(pool[idx]);
+      pool.splice(idx, 1);
+    }
+    for (let pi = 0; pi < picks.length; pi++) {
+      const reply = dialogueRespond(picks[pi], said);
+      chatMessages.push({ who: picks[pi], text: reply });
+      speakText(reply);
+    }
+  } else {
+    const reply = dialogueRespond(dialogueChar, said);
+    chatMessages.push({ who: dialogueChar, text: reply });
+    if (!isSpeaking && speechEnabled) speakText(reply);
+  }
+}
+
+function startListening() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    chatMessages.push({ who: 'system', text: lang === 'en' ? 'Voice input not supported in this browser.' : '你的浏览器不支持语音输入。' });
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR();
+  rec.lang = lang === 'en' ? 'en-US' : 'zh-CN';
+  rec.interimResults = false;
+  rec.continuous = false;
+  isListening = true;
+  activeRecognition = rec;
+  rec.onresult = function(e) {
+    const said = e.results[0][0].transcript;
+    chatMessages.push({ who: 'user', text: said });
+    handleDialogueReply(said);
+    isListening = false;
+    activeRecognition = null;
+  };
+  rec.onerror = function() {
+    chatMessages.push({ who: 'system', text: lang === 'en' ? "Didn't catch that. Please try again." : '没听清楚，请再试一次。' });
+    isListening = false;
+    activeRecognition = null;
+  };
+  rec.onend = function() {
+    isListening = false;
+    activeRecognition = null;
+  };
+  // Pre-warm mic with noise suppression and auto gain for better sensitivity
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true } })
+      .then(function(stream) { stream.getTracks().forEach(function(t) { t.stop(); }); rec.start(); })
+      .catch(function() { rec.start(); });
+  } else {
+    rec.start();
+  }
+}
+function stopListening() {
+  if (activeRecognition) {
+    try { activeRecognition.abort(); } catch(e) {}
+    activeRecognition = null;
+  }
+  isListening = false;
+  cancelSpeech();
+}
+
+function openDialogue(charKey) {
+  dialogueChar = charKey;
+  chatMessages = [];
+  if (charKey === 'group') {
+    // Group chat: bird always greets + 2 random others
+    const others = ['chick', 'blue', 'green', 'blueberry', 'mango', 'white', 'ice', 'gray'];
+    const picks = ['bird'];
+    while (picks.length < 3) {
+      const r = others[Math.floor(Math.random() * others.length)];
+      if (picks.indexOf(r) < 0) picks.push(r);
+    }
+    for (let pi = 0; pi < picks.length; pi++) {
+      const ch = DIALOGUE_CHARS[picks[pi]];
+      const firstResp = ch.responses[Object.keys(ch.responses)[0]];
+      const greet = (lang === 'en' && Array.isArray(firstResp) && firstResp.length > 1) ? firstResp[1] : (Array.isArray(firstResp) ? firstResp[0] : firstResp);
+      chatMessages.push({ who: picks[pi], text: greet });
+      speakText(greet);
+    }
+  } else {
+    const ch = DIALOGUE_CHARS[charKey];
+    const firstResp = ch.responses[Object.keys(ch.responses)[0]];
+    const greeting = (lang === 'en' && Array.isArray(firstResp) && firstResp.length > 1) ? firstResp[1] : (Array.isArray(firstResp) ? firstResp[0] : firstResp);
+    chatMessages.push({ who: charKey, text: greeting });
+    if (!isSpeaking && speechEnabled) speakText(greeting);
+  }
+}
+
+// Dialogue text input element
+const dlgInputEl = document.getElementById('dlgInput');
+dlgInputEl.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    const text = dlgInputEl.value.trim();
+    if (text) {
+      chatMessages.push({ who: 'user', text: text });
+      handleDialogueReply(text);
+      dlgInputEl.value = '';
+    }
+    e.preventDefault();
+  }
+  if (e.key === 'Escape') {
+    dlgInputEl.value = '';
+    e.preventDefault();
+  }
+});
+
+const dlgSendBtnEl = document.getElementById('dlgSendBtn');
+dlgSendBtnEl.addEventListener('click', function() {
+  const text = dlgInputEl.value.trim();
+  if (text) {
+    chatMessages.push({ who: 'user', text: text });
+    handleDialogueReply(text);
+    dlgInputEl.value = '';
+    dlgInputEl.focus();
+  }
+});
+
+let dlgInputWasShown = false;
+function updateDlgInput() {
+  if (!showDialoguePopup || !dialogueChar) {
+    dlgInputEl.style.display = 'none';
+    dlgSendBtnEl.style.display = 'none';
+    dlgInputEl.value = '';
+    dlgInputWasShown = false;
+    return;
+  }
+  const dlgW = 580, dlgH = 460;
+  const dlgX = W/2 - dlgW/2, dlgY = H/2 - dlgH/2;
+  const chatAreaX = dlgX + 14, chatAreaY = dlgY + 52, chatAreaW = dlgW - 28, chatAreaH = 310;
+  const inputY = chatAreaY + chatAreaH + 8;
+  const micH = 34;
+  const inputH = 28;
+  const sendBtnW = 28, sendGap = 6;
+  const inputW = chatAreaW - 20 - sendBtnW - sendGap;
+  // Center input+button combo within chat area
+  const totalW = inputW + sendGap + sendBtnW;
+  const inputX = dlgX + 14 + (chatAreaW - totalW) / 2;
+  const inputTop = inputY + 4 + micH + 4;
+  const scaleX = canvas.clientWidth / W;
+  const scaleY = canvas.clientHeight / H;
+  const containerRect = document.getElementById('gameContainer').getBoundingClientRect();
+  dlgInputEl.style.display = 'block';
+  dlgInputEl.style.left = (containerRect.left + inputX * scaleX) + 'px';
+  dlgInputEl.style.top = (containerRect.top + inputTop * scaleY) + 'px';
+  dlgInputEl.style.width = (inputW * scaleX) + 'px';
+  dlgInputEl.style.height = (inputH * scaleY) + 'px';
+  // Send button to the right of the input
+  dlgSendBtnEl.style.display = 'block';
+  dlgSendBtnEl.style.left = (containerRect.left + (inputX + inputW + sendGap) * scaleX) + 'px';
+  dlgSendBtnEl.style.top = (containerRect.top + inputTop * scaleY) + 'px';
+  dlgSendBtnEl.style.width = (sendBtnW * scaleX) + 'px';
+  dlgSendBtnEl.style.height = (inputH * scaleY) + 'px';
+  dlgSendBtnEl.style.lineHeight = (inputH * scaleY) + 'px';
+  if (!dlgInputWasShown) {
+    dlgInputEl.value = '';
+    dlgInputEl.focus();
+    dlgInputWasShown = true;
+  }
+}
 
 const BIRD_TRAITS = {
   '小蓝':   { spd: 0.7, jmp: 1, grav: 1, fric: 0.8, drift: 0.3, hop: 0.02 },
@@ -816,6 +1465,8 @@ let grayBird = null, grayBirdRespawn = 0; // the rules-stealing troublemaker
 let grayBirdPlayer = false; // player chose gray bird in selection
 let worldLoadingTimer = 0;
 let portalSpinTimer = 0, portalNextWorld = 0, portalBirdName = null, portalBirdColor = null;
+let victoryPhoto = null; // captured canvas photo for portal easter egg
+let cameraSoundPlayed = false;
 let worldSelectPage = 0;
 
 function spawnGrayBird() {
@@ -1007,6 +1658,7 @@ function updateGrayBird() {
 const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
+  if (e.code === 'Space' && gameState === 'runner') { e.preventDefault(); if (!runnerStarted) { runnerStarted = true; runnerBirdVY = -9; } else if (!runnerGameOver) { runnerBirdVY = -9; } else { resetRunner(); } return; }
   if (e.code === 'Space' && gameState === 'title') { gameState = 'select'; selectTimer = 600; powerUp = null; loadDefaultBird(); }
   if (e.code === 'KeyR' && gameState === 'over') resetGame();
   // Gray bird damage abilities (when player controls gray bird)
@@ -1128,7 +1780,7 @@ canvas.addEventListener('click', e => {
 
   // World select screen
   if (gameState === 'worldSelect') {
-    const wsW = 240, wsH = 200, wsGap = 15;
+    const wsW = 230, wsH = 155, wsGap = 12;
     const wsCols = 3;
     const cardsPerPage = 6;
     const totalPages = Math.ceil(WORLD_COUNT / cardsPerPage);
@@ -1139,7 +1791,7 @@ canvas.addEventListener('click', e => {
     const wsRows = Math.ceil(shownWorlds.length / wsCols);
     const wsGridW = wsW * Math.min(wsCols, shownWorlds.length) + wsGap * (Math.min(wsCols, shownWorlds.length) - 1);
     const wsStartX = W/2 - wsGridW / 2;
-    const wsStartY = 80;
+    const wsStartY = 70;
 
     for (let i = 0; i < shownWorlds.length; i++) {
       const wId = shownWorlds[i];
@@ -1159,14 +1811,13 @@ canvas.addEventListener('click', e => {
     }
     // Page navigation
     const navY = wsStartY + wsRows * (wsH + wsGap) + 10;
-    const navBtnW = 40, navBtnH = 30;
     if (worldSelectPage > 0) {
-      const lx = W/2 - 60, ly = navY;
-      if (mx > lx && mx < lx + navBtnW && my > ly && my < ly + navBtnH) { worldSelectPage--; return; }
+      const lx = W/2 - 55, ly = navY, lw = 36, lh = 24;
+      if (mx > lx && mx < lx + lw && my > ly && my < ly + lh) { worldSelectPage--; return; }
     }
     if (startIdx + cardsPerPage < WORLD_COUNT) {
-      const rx = W/2 + 20, ry = navY;
-      if (mx > rx && mx < rx + navBtnW && my > ry && my < ry + navBtnH) { worldSelectPage++; return; }
+      const rx = W/2 + 19, ry = navY, rw = 36, rh = 24;
+      if (mx > rx && mx < rx + rw && my > ry && my < ry + rh) { worldSelectPage++; return; }
     }
     const wsbbW = 120, wsbbH = 36, wsbbX = W/2 - wsbbW/2, wsbbY = H - 56;
     if (mx > wsbbX && mx < wsbbX + wsbbW && my > wsbbY && my < wsbbY + wsbbH) {
@@ -1249,6 +1900,72 @@ canvas.addEventListener('click', e => {
       showMusicPopup = false;
       return;
     }
+    // Dialogue popup
+    if (showDialoguePopup) {
+      const dlgW = 580, dlgH = 460;
+      const dlgX = W/2 - dlgW/2, dlgY = H/2 - dlgH/2;
+      const backW = 70, backH = 26, backX = dlgX + 10, backY = dlgY + 8;
+      // Back button
+      if (mx > backX && mx < backX + backW && my > backY && my < backY + backH) {
+        if (dialogueChar) {
+          dialogueChar = null; chatMessages = []; stopListening();
+        } else {
+          showDialoguePopup = false;
+        }
+        return;
+      }
+      if (!dialogueChar) {
+        // Character selection grid
+        const cardW = 96, cardH = 148, gapX = 8, gapY = 8;
+        const gridCols = 5;
+        const gridStartX = dlgX + 16, gridStartY = dlgY + 88;
+        const allKeys = ['bird', 'chick', 'blue', 'green', 'blueberry', 'mango', 'white', 'ice', 'gray', 'group'];
+        for (let ci = 0; ci < allKeys.length; ci++) {
+          const col = ci % gridCols, row = Math.floor(ci / gridCols);
+          const cx = gridStartX + col * (cardW + gapX);
+          const cy = gridStartY + row * (cardH + gapY);
+          if (mx > cx && mx < cx + cardW && my > cy && my < cy + cardH) {
+            openDialogue(allKeys[ci]);
+            return;
+          }
+        }
+      } else {
+        const chatAreaX = dlgX + 14, chatAreaY = dlgY + 52, chatAreaW = dlgW - 28, chatAreaH = 310;
+        const inputY = chatAreaY + chatAreaH + 8;
+        // Mic button (centered)
+        const micW = 44, micH = 34, micX = chatAreaX + chatAreaW/2 - micW/2, micY = inputY + 8;
+        if (mx > micX && mx < micX + micW && my > micY && my < micY + micH) {
+          if (isListening) { stopListening(); } else { startListening(); }
+          return;
+        }
+        // AI Settings button (top right)
+        const gearW4 = 70, gearH4 = 26, gearX4 = dlgX + dlgW - gearW4 - 10, gearY4 = dlgY + 8;
+        if (mx > gearX4 && mx < gearX4 + gearW4 && my > gearY4 && my < gearY4 + gearH4) {
+          showAiSettings = !showAiSettings;
+          return;
+        }
+        // AI Settings panel clicks
+        if (showAiSettings) {
+          const spW3 = 240, spH3 = 160, spX3 = W/2 - spW3/2, spY3 = H/2 - spH3/2;
+          const sliderX3 = spX3 + 20, sliderW3 = spW3 - 40, sliderY3 = spY3 + 64;
+          if (my > sliderY3 - 8 && my < sliderY3 + 16 && mx > sliderX3 && mx < sliderX3 + sliderW3) {
+            aiCreativity = Math.round(((mx - sliderX3) / sliderW3) * 100);
+            aiCreativity = Math.max(0, Math.min(100, aiCreativity));
+            return;
+          }
+          const toggleX3 = spX3 + spW3/2 - 20, toggleY3 = spY3 + 114, toggleW3 = 40, toggleH3 = 20;
+          if (mx > toggleX3 && mx < toggleX3 + toggleW3 && my > toggleY3 && my < toggleY3 + toggleH3) {
+            speechEnabled = !speechEnabled;
+            return;
+          }
+          if (mx > spX3 + spW3 - 60 && mx < spX3 + spW3 - 10 && my > spY3 + 130 && my < spY3 + 152) {
+            showAiSettings = false;
+            return;
+          }
+        }
+      }
+      return;
+    }
     // Rules overlay
     if (showRules === 'bird') {
       // Click paper → read rules
@@ -1267,7 +1984,7 @@ canvas.addEventListener('click', e => {
       showRules = false; return;
     }
     const topBtnW2 = 58, topBtnH2 = 26, topBtnGap2 = 3;
-    const topTotalW2 = topBtnW2 * 6 + topBtnGap2 * 5;
+    const topTotalW2 = topBtnW2 * 8 + topBtnGap2 * 7;
     const topBtnStartX2 = W/2 - topTotalW2 / 2;
     const topBtnX2 = function(i) { return topBtnStartX2 + (topBtnW2 + topBtnGap2) * i; };
     const topBtnY2 = 192;
@@ -1291,10 +2008,18 @@ canvas.addEventListener('click', e => {
     if (mx > topBtnX2(4) && mx < topBtnX2(4) + topBtnW2 && my > topBtnY2 && my < topBtnY2 + topBtnH2) {
       showMusicPopup = true; return;
     }
-    // Warp World (5)
+    // Dialogue (5)
     if (mx > topBtnX2(5) && mx < topBtnX2(5) + topBtnW2 && my > topBtnY2 && my < topBtnY2 + topBtnH2) {
+      showDialoguePopup = true; dialogueChar = null; chatMessages = []; stopListening(); return;
+    }
+    // Warp World (6)
+    if (mx > topBtnX2(6) && mx < topBtnX2(6) + topBtnW2 && my > topBtnY2 && my < topBtnY2 + topBtnH2) {
       gameState = 'worldSelect'; worldSelectPage = 0;
       return;
+    }
+    // Runner game (7)
+    if (mx > topBtnX2(7) && mx < topBtnX2(7) + topBtnW2 && my > topBtnY2 && my < topBtnY2 + topBtnH2) {
+      gameState = 'runner'; resetRunner(); return;
     }
     // Refresh button
     if (mx > 362 && mx < 441 && my > 310 && my < 338) {
@@ -1307,12 +2032,42 @@ canvas.addEventListener('click', e => {
     return;
   }
 
+  // Runner game
+  if (gameState === 'runner') {
+    // Back button
+    const rbBackW = 100, rbBackH = 32, rbBackX = 20, rbBackY = 20;
+    if (mx > rbBackX && mx < rbBackX + rbBackW && my > rbBackY && my < rbBackY + rbBackH) {
+      gameState = 'title'; return;
+    }
+    // Start game from preview AND jump
+    if (!runnerStarted) { runnerStarted = true; runnerBirdVY = -9; return; }
+    // Click to jump
+    if (!runnerGameOver && !runnerVictory) { runnerBirdVY = -9; return; }
+    // Victory - click to return to title
+    if (runnerVictory) { gameState = 'title'; return; }
+    // Click to restart when game over
+    if (runnerGameOver) { resetRunner(); return; }
+    return;
+  }
+
   // Game over buttons
   if (gameState === 'over') {
     const rbx = W/2 - 170, rby = H/2 + 70, rbw = 150, rbh = 55;
     const hbx = W/2 + 20, hby = H/2 + 70, hbw = 150, hbh = 55;
     if (mx > rbx && mx < rbx + rbw && my > rby && my < rby + rbh) { resetGameKeepSelection(); gameState = 'playing'; return; }
     if (mx > hbx && mx < hbx + hbw && my > hby && my < hby + hbh) { resetGame(); return; }
+    // Treasure chest button
+    const tcY2 = H/2 + 138, barH3 = 18;
+    const barY3 = tcY2 + 18, gbW2 = 130, gbH2 = 34, gbX2 = W/2 - gbW2/2, gbY3 = barY3 + barH3 + 8;
+    if (!treasureClaimed && mx > gbX2 && mx < gbX2 + gbW2 && my > gbY3 && my < gbY3 + gbH2) {
+      treasureProgress = Math.min(100, treasureProgress + 7);
+      if (treasureProgress >= 100) {
+        treasureClaimed = true;
+        totalCoins += 100;
+        localStorage.setItem('superBirdsTotalCoins', totalCoins);
+      }
+      return;
+    }
   }
 
   // Character / Power-Up selection screen
@@ -1508,6 +2263,7 @@ function resetGame() {
   p1Bird = null; p2Bird = null;
   gameState = 'title';
   grayBird = null; grayBirdRespawn = 0; grayBirdPlayer = false;
+  treasureProgress = 0; treasureClaimed = false;
   powerUp = null; hasSuperFlight = false; coinMagnet = false; doubleTime = false; grayBirdPowerUp = false;
   initWorld();
 }
@@ -1523,6 +2279,7 @@ function resetGameKeepSelection() {
   const newBirds = getAllBirds();
   const wasGrayBirdPlayer = grayBirdPlayer;
   p1Bird = null; grayBird = null; grayBirdRespawn = 0; grayBirdPlayer = wasGrayBirdPlayer;
+  treasureProgress = 0; treasureClaimed = false;
   for (const b of getAllBirds()) { if (b.controller === 'p1') p1Bird = b; }
   restoreWorld();
 }
@@ -1817,15 +2574,21 @@ function update() {
   const allRacers = grayBird ? [...getAllBirds(), grayBird] : getAllBirds();
   for (const b of allRacers) {
     if (b.maxHeight >= goal) {
-      if (currentWorld < WORLD_COUNT && isWorldUnlocked(currentWorld + 1)) {
-        // Portal to next world
+      const isPlayer = (b === p1Bird) || (b === grayBird && grayBirdPlayer);
+      if (currentWorld < WORLD_COUNT && isWorldUnlocked(currentWorld + 1) && isPlayer) {
+        // Portal easter egg — only when player reaches the goal
         totalCoins += currentWorld * 100;
         localStorage.setItem('superBirdsTotalCoins', totalCoins);
         portalNextWorld = currentWorld + 1;
         portalBirdName = b.name;
         portalBirdColor = b.color;
-        // Spin duration: W1→W2 = 90, W2→W3 = 150, rest = 90
-        portalSpinTimer = (currentWorld === 1) ? 90 : (currentWorld === 2) ? 150 : 90;
+        portalSpinTimer = (currentWorld === 1) ? 360 : (currentWorld === 2) ? 600 : 360;
+        cameraSoundPlayed = false;
+        // Capture victory photo for the camera easter egg
+        try {
+          victoryPhoto = new Image();
+          victoryPhoto.src = canvas.toDataURL('image/png');
+        } catch(e) { victoryPhoto = null; }
         gameState = 'portalSpin';
       } else {
         gameState = 'over';
@@ -2461,7 +3224,7 @@ function draw() {
 
     // Swirling portal vortex
     const cx = W/2, cy = H/2 - 30;
-    const spinAngle = (portalSpinTimer / 90) * Math.PI * 4;
+    const spinAngle = (portalSpinTimer / 360) * Math.PI * 4;
     ctx.save(); ctx.translate(cx, cy);
 
     // Outer rings
@@ -2499,7 +3262,7 @@ function draw() {
     ctx.restore();
 
     // +100 coins + bird name
-    const coinAlpha = portalSpinTimer > 60 ? 1 : (portalSpinTimer / 60);
+    const coinAlpha = portalSpinTimer > 240 ? 1 : (portalSpinTimer / 240);
     ctx.fillStyle = 'rgba(255,221,0,' + coinAlpha + ')'; ctx.font = 'bold 36px "Courier New"'; ctx.textAlign = 'center';
     ctx.fillText('+100 💰', W/2, H/2 + 120);
 
@@ -2512,6 +3275,55 @@ function draw() {
     const destName = portalNextWorld > 0 ? t('world_' + WORLD_TKEY[portalNextWorld-1] + '_name') : '';
     ctx.fillStyle = '#aaa'; ctx.font = 'bold 16px "Courier New"';
     ctx.fillText('→ ' + destName, W/2, H/2 + 182);
+
+    // Camera FX: photo snap → zoom into portal
+    if (portalSpinTimer > 200) {
+      // Phase 1: camera flash + shutter
+      const flashAlpha = portalSpinTimer > 320 ? Math.min(1, (portalSpinTimer - 320) / 24) : 0;
+      if (flashAlpha > 0) {
+        ctx.fillStyle = 'rgba(255,255,255,' + (flashAlpha * 0.75) + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+      // Camera emoji
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 60px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('📸', W/2, H/2 - 40);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(0, H/2 - 8, W, 16);
+      ctx.fillRect(0, H/2 - 60, W, 8);
+      ctx.fillRect(0, H/2 + 52, W, 8);
+    } else if (portalSpinTimer > 80 && victoryPhoto && victoryPhoto.complete && victoryPhoto.naturalWidth > 0) {
+      // Phase 2: photo zooms into portal
+      const zoomProgress = (200 - portalSpinTimer) / 120;
+      const scale = 1 + zoomProgress * 3;
+      ctx.save();
+      ctx.translate(W/2, H/2 - 30);
+      ctx.scale(scale, scale);
+      ctx.translate(-W/2, -(H/2 - 30));
+      ctx.drawImage(victoryPhoto, 0, 0, W, H);
+      ctx.restore();
+      if (zoomProgress < 0.5) {
+        ctx.fillStyle = 'rgba(0,0,0,' + ((1 - zoomProgress/0.5) * 0.3) + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+    } else if (portalSpinTimer <= 80) {
+      // Phase 3: portal vortex intensifies
+      const cx = W/2, cy = H/2 - 30;
+      const va = portalSpinTimer / 80;
+      const vortexGlow = ctx.createRadialGradient(cx, cy, 10, cx, cy, 200);
+      vortexGlow.addColorStop(0, 'rgba(255,255,255,' + va + ')');
+      vortexGlow.addColorStop(0.4, 'rgba(150,200,255,' + (va*0.4) + ')');
+      vortexGlow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = vortexGlow;
+      ctx.fillRect(cx - 200, cy - 200, 400, 400);
+      const vigAlpha = 1 - va;
+      if (vigAlpha > 0) {
+        const vig = ctx.createRadialGradient(cx, cy, 80, cx, cy, 500);
+        vig.addColorStop(0, 'rgba(0,0,0,0)');
+        vig.addColorStop(1, 'rgba(0,0,0,' + vigAlpha + ')');
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
 
     return;
   }
@@ -2566,12 +3378,46 @@ function draw() {
     else ctx.strokeRect(gx2 + bw2*0.38, gy2 + bh2*0.35, bw2*0.2, bh2*0.22);
     ctx.strokeRect(gx2 + bw2*0.2, gy2 + bh2*0.3, bw2*0.2, bh2*0.2);
 
-    // Title (same as game start loading)
-    ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 36px "Courier New"'; ctx.textAlign = 'center';
-    ctx.fillText(t('loading_title'), W/2, H/2 + 20);
-
-    // Loading bar
-    const barW2 = 600, barH2 = 16, barX2 = W/2 - barW2/2, barY2 = H/2 + 50;
+    let barW2, barH2, barX2, barY2;
+    // Victory photo from portal camera easter egg
+    if (victoryPhoto && victoryPhoto.complete && victoryPhoto.naturalWidth > 0) {
+      const frameStyles = [
+        { outer: '#e8dcc8', inner: '#faf8f0', accent: '#b8a880', deco: '📷', title: 'W1' },
+        { outer: '#cc2222', inner: '#ffeedd', accent: '#ffcc00', deco: '🧧', title: 'W2' },
+        { outer: '#c89933', inner: '#fff8e0', accent: '#e8c840', deco: '🌙', title: 'W3' },
+        { outer: '#dd4422', inner: '#fff2e8', accent: '#ffaa00', deco: '🏮', title: 'W4' },
+        { outer: '#447744', inner: '#eeffee', accent: '#88cc88', deco: '🍃', title: 'W5' },
+        { outer: '#996633', inner: '#fff8f0', accent: '#cc8844', deco: '🍚', title: 'W6' },
+        { outer: '#115577', inner: '#e8f4ff', accent: '#33bb99', deco: '🐲', title: 'W7' },
+        { outer: '#bb5599', inner: '#fff0f8', accent: '#ff77bb', deco: '💫', title: 'W8' },
+        { outer: '#cc2222', inner: '#fff0e0', accent: '#ffdd00', deco: '🎉', title: 'W9' },
+        { outer: '#cc7722', inner: '#fffaf0', accent: '#ffbb44', deco: '🏵️', title: 'W10' },
+        { outer: '#5577aa', inner: '#eef6ff', accent: '#99bbdd', deco: '❄️', title: 'W11' },
+      ];
+      const fs = frameStyles[currentWorld - 1] || frameStyles[0];
+      const pw = 220, ph = 140, px = W/2 - pw/2 - 10, py = H/2 - 80;
+      // Outer frame
+      ctx.fillStyle = fs.outer; ctx.fillRect(px - 12, py - 12, pw + 24, ph + 24);
+      // Inner border
+      ctx.fillStyle = fs.inner; ctx.fillRect(px - 4, py - 4, pw + 8, ph + 8);
+      // Photo
+      ctx.drawImage(victoryPhoto, px, py, pw, ph);
+      // Accent corners
+      ctx.fillStyle = fs.accent;
+      ctx.fillRect(px - 12, py - 12, 14, 5); ctx.fillRect(px - 12, py - 12, 5, 14);
+      ctx.fillRect(px + pw - 2, py - 12, 14, 5); ctx.fillRect(px + pw + 7, py - 12, 5, 14);
+      ctx.fillRect(px - 12, py + ph + 7, 14, 5); ctx.fillRect(px - 12, py + ph - 9, 5, 14);
+      ctx.fillRect(px + pw - 2, py + ph + 7, 14, 5); ctx.fillRect(px + pw + 7, py + ph - 9, 5, 14);
+      // Label
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText(fs.deco + ' ' + fs.title + ' · ' + t('loading_title'), W/2, py + ph + 22);
+      // Loading bar
+      barW2 = 600; barH2 = 16; barX2 = W/2 - barW2/2; barY2 = py + ph + 38;
+    } else {
+      ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 36px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText(t('loading_title'), W/2, H/2 + 20);
+      barW2 = 600; barH2 = 16; barX2 = W/2 - barW2/2; barY2 = H/2 + 50;
+    }
     const progress2 = 1 - (worldLoadingTimer / 90);
     ctx.fillStyle = '#333'; ctx.fillRect(barX2, barY2, barW2, barH2);
     ctx.strokeStyle = '#888'; ctx.lineWidth = 2; ctx.strokeRect(barX2, barY2, barW2, barH2);
@@ -3000,7 +3846,7 @@ function draw() {
 
     // Language / Rules / Wheel / Shop / Warp buttons
     const topBtnW = 58, topBtnH = 26, topBtnGap = 3;
-    const topTotalW = topBtnW * 6 + topBtnGap * 5;
+    const topTotalW = topBtnW * 8 + topBtnGap * 7;
     const topBtnStartX = W/2 - topTotalW / 2;
     const topBtnY = 192;
     const topBtnX = function(i) { return topBtnStartX + (topBtnW + topBtnGap) * i; };
@@ -3029,11 +3875,21 @@ function draw() {
     ctx.fillStyle = '#44aa66'; ctx.fillRect(topBtnX(4) + 2, topBtnY + 2, topBtnW - 4, topBtnH - 4);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"';
     ctx.fillText(t('btn_music'), topBtnX(4) + topBtnW/2, topBtnY + 17);
-    // Warp World (5)
-    ctx.fillStyle = '#2255aa'; ctx.fillRect(topBtnX(5), topBtnY, topBtnW, topBtnH);
-    ctx.fillStyle = '#4477cc'; ctx.fillRect(topBtnX(5) + 2, topBtnY + 2, topBtnW - 4, topBtnH - 4);
+    // Dialogue (5)
+    ctx.fillStyle = '#883366'; ctx.fillRect(topBtnX(5), topBtnY, topBtnW, topBtnH);
+    ctx.fillStyle = '#cc6699'; ctx.fillRect(topBtnX(5) + 2, topBtnY + 2, topBtnW - 4, topBtnH - 4);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"';
-    ctx.fillText(t('btn_warp'), topBtnX(5) + topBtnW/2, topBtnY + 17);
+    ctx.fillText(t('btn_dialogue'), topBtnX(5) + topBtnW/2, topBtnY + 17);
+    // Warp World (6)
+    ctx.fillStyle = '#2255aa'; ctx.fillRect(topBtnX(6), topBtnY, topBtnW, topBtnH);
+    ctx.fillStyle = '#4477cc'; ctx.fillRect(topBtnX(6) + 2, topBtnY + 2, topBtnW - 4, topBtnH - 4);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"';
+    ctx.fillText(t('btn_warp'), topBtnX(6) + topBtnW/2, topBtnY + 17);
+    // New Game (7)
+    ctx.fillStyle = '#226688'; ctx.fillRect(topBtnX(7), topBtnY, topBtnW, topBtnH);
+    ctx.fillStyle = '#44aacc'; ctx.fillRect(topBtnX(7) + 2, topBtnY + 2, topBtnW - 4, topBtnH - 4);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText('新游戏', topBtnX(7) + topBtnW/2, topBtnY + 17);
 
     // 6 birds preview in 2 rows of 3
     const previewBirds = getAllBirds();
@@ -3185,6 +4041,162 @@ function draw() {
       // Close hint
       ctx.fillStyle = '#888'; ctx.font = '14px "Courier New"';
       ctx.fillText(t('click_anywhere'), W/2, H/2 + 130);
+    }
+
+    // Dialogue popup
+    if (showDialoguePopup) {
+      ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, W, H);
+      const dlgW = 580, dlgH = 460;
+      const dlgX = W/2 - dlgW/2, dlgY = H/2 - dlgH/2;
+      ctx.fillStyle = 'rgba(20,20,40,0.95)'; ctx.fillRect(dlgX, dlgY, dlgW, dlgH);
+      ctx.strokeStyle = '#cc6699'; ctx.lineWidth = 3; ctx.strokeRect(dlgX, dlgY, dlgW, dlgH);
+
+      // Title (always shown)
+      ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 20px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText(t('dlg_title'), W/2, dlgY + 32);
+
+      // Back button
+      const backW = 70, backH = 26, backX = dlgX + 10, backY = dlgY + 8;
+      ctx.fillStyle = '#883366'; ctx.fillRect(backX, backY, backW, backH);
+      ctx.fillStyle = '#cc6699'; ctx.fillRect(backX + 2, backY + 2, backW - 4, backH - 4);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"';
+      ctx.fillText(t('dlg_back'), backX + backW/2, backY + 17);
+
+      if (!dialogueChar) {
+        // Character selection grid — 5 columns x 2 rows (9 chars + 1 group)
+        ctx.fillStyle = '#ccc'; ctx.font = '13px "Courier New"';
+        ctx.fillText(t('dlg_select_char'), W/2, dlgY + 74);
+
+        const cardW = 96, cardH = 148, gapX = 8, gapY = 8;
+        const gridCols = 5;
+        const gridStartX = dlgX + 16, gridStartY = dlgY + 88;
+        const allKeys = ['bird', 'chick', 'blue', 'green', 'blueberry', 'mango', 'white', 'ice', 'gray', 'group'];
+        const cardColors = [
+          '#44aaff','#ffaa44','#4488cc','#44cc66','#9966cc','#ff8844','#cccccc','#6688cc','#888888','#cc44aa'
+        ];
+        const cardColors2 = [
+          '#3388dd','#dd8822','#336699','#33aa55','#7744aa','#dd6622','#aaaaaa','#4466aa','#666666','#aa2288'
+        ];
+
+        for (let ci = 0; ci < allKeys.length; ci++) {
+          const key = allKeys[ci];
+          const col = ci % gridCols, row = Math.floor(ci / gridCols);
+          const cx = gridStartX + col * (cardW + gapX);
+          const cy = gridStartY + row * (cardH + gapY);
+
+          ctx.fillStyle = cardColors[ci]; ctx.fillRect(cx, cy, cardW, cardH);
+          ctx.fillStyle = cardColors2[ci]; ctx.fillRect(cx + 2, cy + 2, cardW - 4, cardH - 4);
+
+          if (key === 'group') {
+            ctx.fillStyle = '#fff'; ctx.font = '44px "Courier New"'; ctx.textAlign = 'center';
+            ctx.fillText('👥', cx + cardW/2, cy + 52);
+            ctx.font = 'bold 12px "Courier New"';
+            ctx.fillText(t('dlg_group'), cx + cardW/2, cy + 78);
+            ctx.fillStyle = '#ddd'; ctx.font = '9px "Courier New"';
+            ctx.fillText(t('dlg_group_desc'), cx + cardW/2, cy + 96);
+          } else {
+            const ch = DIALOGUE_CHARS[key];
+            ctx.fillStyle = '#fff'; ctx.font = '38px "Courier New"'; ctx.textAlign = 'center';
+            ctx.fillText(ch.emoji, cx + cardW/2, cy + 42);
+            ctx.font = 'bold 11px "Courier New"';
+            ctx.fillText(t(ch.nameKey), cx + cardW/2, cy + 68);
+            ctx.fillStyle = '#ddd'; ctx.font = '8px "Courier New"';
+            ctx.fillText(t(ch.descKey), cx + cardW/2, cy + 84);
+          }
+          // Enter button
+          const sbW = 68, sbH = 22, sbX = cx + cardW/2 - sbW/2, sbY = cy + cardH - 32;
+          ctx.fillStyle = '#ffdd00'; ctx.fillRect(sbX, sbY, sbW, sbH);
+          ctx.fillStyle = '#000'; ctx.font = 'bold 10px "Courier New"';
+          ctx.fillText(t('dlg_send'), sbX + sbW/2, sbY + 15);
+        }
+      } else {
+        // Chat mode
+        const isGroup = dialogueChar === 'group';
+        const ch = isGroup ? null : DIALOGUE_CHARS[dialogueChar];
+        const chatAreaX = dlgX + 14, chatAreaY = dlgY + 52, chatAreaW = dlgW - 28, chatAreaH = 310;
+        const inputY = chatAreaY + chatAreaH + 8;
+
+        // Character / Group indicator below title
+        ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 15px "Courier New"'; ctx.textAlign = 'center';
+        if (isGroup) {
+          ctx.fillText('👥 ' + t('dlg_group'), W/2, dlgY + 58);
+        } else {
+          ctx.fillText(ch.emoji + ' ' + t(ch.nameKey), W/2, dlgY + 58);
+        }
+
+        // Chat message area
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(chatAreaX, chatAreaY + 14, chatAreaW, chatAreaH);
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.strokeRect(chatAreaX, chatAreaY + 14, chatAreaW, chatAreaH);
+
+        // Messages
+        ctx.textAlign = 'left';
+        const msgStartY = chatAreaY + 30;
+        const maxMsgs = 12;
+        const showMsgs = chatMessages.slice(-maxMsgs);
+        for (let mi = 0; mi < showMsgs.length; mi++) {
+          const msg = showMsgs[mi];
+          const my2 = msgStartY + mi * 22;
+          if (my2 > chatAreaY + chatAreaH - 4) break;
+          if (msg.who === 'system') {
+            ctx.fillStyle = '#999'; ctx.font = '10px "Courier New"';
+            ctx.fillText('⚡ ' + msg.text, chatAreaX + 8, my2);
+          } else if (msg.who === 'user') {
+            ctx.fillStyle = '#44aaff'; ctx.font = 'bold 10px "Courier New"';
+            ctx.fillText('👤 ' + msg.text, chatAreaX + 8, my2);
+          } else {
+            // Show emoji for whoever spoke (works for group and single)
+            const speaker = DIALOGUE_CHARS[msg.who];
+            const emoji = speaker ? speaker.emoji : '💬';
+            ctx.fillStyle = '#ffdd00'; ctx.font = '10px "Courier New"';
+            ctx.fillText(emoji + ' ' + msg.text, chatAreaX + 8, my2);
+          }
+        }
+
+        // Mic button (centered)
+        const micW = 44, micH = 34, micX = chatAreaX + chatAreaW/2 - micW/2, micY = inputY + 4;
+        ctx.fillStyle = isListening ? '#ff4444' : '#6644aa'; ctx.fillRect(micX, micY, micW, micH);
+        ctx.fillStyle = isListening ? '#ff6666' : '#8866cc'; ctx.fillRect(micX + 2, micY + 2, micW - 4, micH - 4);
+        ctx.fillStyle = '#fff'; ctx.font = '20px "Courier New"'; ctx.textAlign = 'center';
+        ctx.fillText('🎤', micX + micW/2, micY + 25);
+
+	        // AI Settings button (top right, mirrors back button)
+	        const gearW2 = 70, gearH2 = 26, gearX2 = dlgX + dlgW - gearW2 - 10, gearY2 = dlgY + 8;
+	        ctx.fillStyle = showAiSettings ? '#cc5500' : '#2255aa';
+	        ctx.fillRect(gearX2, gearY2, gearW2, gearH2);
+	        ctx.fillStyle = showAiSettings ? '#ff8844' : '#4488cc';
+	        ctx.fillRect(gearX2 + 2, gearY2 + 2, gearW2 - 4, gearH2 - 4);
+	        ctx.fillStyle = '#fff'; ctx.font = 'bold 11px "Courier New"'; ctx.textAlign = 'center';
+	        ctx.fillText('⚙ AI', gearX2 + gearW2/2, gearY2 + 17);
+
+	        // AI Settings panel
+	        if (showAiSettings) {
+	          const spW = 240, spH = 160, spX = W/2 - spW/2, spY = H/2 - spH/2;
+	          ctx.fillStyle = 'rgba(20,20,50,0.97)'; ctx.fillRect(spX, spY, spW, spH);
+	          ctx.strokeStyle = '#ff8844'; ctx.lineWidth = 2; ctx.strokeRect(spX, spY, spW, spH);
+	          ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Courier New"'; ctx.textAlign = 'center';
+	          ctx.fillText('AI Settings', spX + spW/2, spY + 28);
+	          // Creativity slider
+	          ctx.fillStyle = '#ccc'; ctx.font = '11px "Courier New"';
+	          ctx.fillText('Creativity: ' + aiCreativity, spX + spW/2, spY + 56);
+	          const sliderX = spX + 20, sliderW = spW - 40, sliderY = spY + 64;
+	          ctx.fillStyle = '#333'; ctx.fillRect(sliderX, sliderY, sliderW, 8);
+	          const knobX = sliderX + (aiCreativity / 100) * sliderW;
+	          ctx.fillStyle = '#ff8844'; ctx.beginPath(); ctx.arc(knobX, sliderY + 4, 8, 0, Math.PI*2); ctx.fill();
+	          ctx.fillStyle = '#999'; ctx.font = '9px "Courier New"';
+	          ctx.fillText('Precise', spX + 40, sliderY + 30);
+	          ctx.fillText('Creative', spX + spW - 40, sliderY + 30);
+	          // Voice toggle
+	          ctx.fillStyle = '#ccc'; ctx.font = '11px "Courier New"';
+	          ctx.fillText('Voice: ' + (speechEnabled ? 'ON' : 'OFF'), spX + spW/2, spY + 110);
+	          const toggleX = spX + spW/2 - 20, toggleY = spY + 114, toggleW = 40, toggleH = 20;
+	          ctx.fillStyle = speechEnabled ? '#44aa44' : '#666'; ctx.fillRect(toggleX, toggleY, toggleW, toggleH);
+	          ctx.fillStyle = '#fff'; ctx.font = '10px "Courier New"';
+	          ctx.fillText(speechEnabled ? 'ON' : 'OFF', toggleX + toggleW/2, toggleY + 14);
+	          // Close button
+	          ctx.fillStyle = '#883366'; ctx.fillRect(spX + spW - 60, spY + 130, 50, 22);
+	          ctx.fillStyle = '#fff'; ctx.font = 'bold 10px "Courier New"'; ctx.fillText('Close', spX + spW - 35, spY + 145);
+	        }
+      }
     }
   }
 
@@ -3371,6 +4383,119 @@ function draw() {
     ctx.strokeStyle = '#888'; ctx.lineWidth = 2; ctx.strokeRect(wsBackX, wsBackY, wsBackW, wsBackH);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 16px "Courier New"'; ctx.textAlign = 'center';
     ctx.fillText(t('btn_back'), W/2, wsBackY + 24);
+  }
+
+  // Runner Game
+  if (gameState === 'runner') {
+    if (!runnerStarted) {
+      // Card preview screen (like world select cards)
+      ctx.fillStyle = 'rgba(0,0,0,0.88)'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 28px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('小鸟跑酷', W/2, 44);
+
+      // Card
+      const cardW = 280, cardH = 280, cardX = W/2 - cardW/2, cardY = 70;
+      ctx.fillStyle = 'rgba(20,30,50,0.95)'; ctx.fillRect(cardX, cardY, cardW, cardH);
+      ctx.strokeStyle = '#44aacc'; ctx.lineWidth = 3; ctx.strokeRect(cardX, cardY, cardW, cardH);
+
+      // Sky preview inside card
+      const pg = ctx.createLinearGradient(0, cardY + 10, 0, cardY + cardH - 60);
+      pg.addColorStop(0, '#87CEEB'); pg.addColorStop(0.7, '#E0F0FF'); pg.addColorStop(1, '#90EE90');
+      ctx.fillStyle = pg; ctx.fillRect(cardX + 4, cardY + 10, cardW - 8, cardH - 70);
+
+      // Horizontal platforms in preview (like main game)
+      ctx.fillStyle = '#8B5A2F';
+      ctx.fillRect(cardX + 40, cardY + 170, 75, 10);
+      ctx.fillStyle = '#A07040'; ctx.fillRect(cardX + 40, cardY + 170, 75, 3);
+      ctx.fillStyle = '#8B5A2F';
+      ctx.fillRect(cardX + 160, cardY + 130, 60, 10);
+      ctx.fillStyle = '#A07040'; ctx.fillRect(cardX + 160, cardY + 130, 60, 3);
+      ctx.fillStyle = '#8B5A2F';
+      ctx.fillRect(cardX + 100, cardY + 210, 65, 10);
+      ctx.fillStyle = '#A07040'; ctx.fillRect(cardX + 100, cardY + 210, 65, 3);
+
+      // Animated bird on a platform in preview
+      const pbx = cardX + 58, pby = cardY + 138;
+      const pwu = frame % 20 < 10;
+      ctx.fillStyle = '#ffdd00'; ctx.fillRect(pbx + 10, pby + 5, 18, 16);
+      ctx.fillStyle = '#ffaa00'; ctx.fillRect(pbx + 14, pby, 10, 10);
+      ctx.fillStyle = '#fff'; ctx.fillRect(pbx + 18, pby + 2, 4, 4);
+      ctx.fillStyle = '#000'; ctx.fillRect(pbx + 19, pby + 3, 2, 2);
+      ctx.fillStyle = '#ff6600'; ctx.fillRect(pbx + 24, pby + 4, 6, 3);
+      ctx.fillStyle = '#eebb00';
+      if (pwu) { ctx.fillRect(pbx + 3, pby + 2, 8, 12); }
+      else { ctx.fillRect(pbx + 3, pby + 12, 8, 12); }
+
+      // Game name below card
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 18px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('小鸟跑酷', W/2, cardY + cardH + 28);
+
+      // Start hint
+      ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 13px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('点击或按空格开始', W/2, cardY + cardH + 50);
+    } else {
+    // Sky background
+    const rGrad = ctx.createLinearGradient(0, 0, 0, H);
+    rGrad.addColorStop(0, '#87CEEB'); rGrad.addColorStop(0.7, '#E0F0FF'); rGrad.addColorStop(1, '#90EE90');
+    ctx.fillStyle = rGrad; ctx.fillRect(0, 0, W, H);
+
+    // Draw horizontal platforms
+    ctx.fillStyle = '#8B5A2F';
+    for (let pi = 0; pi < runnerPlatforms.length; pi++) {
+      const p = runnerPlatforms[pi];
+      const sx = p.x - runnerScrollX;
+      if (sx > -p.w && sx < W + 20) {
+        ctx.fillStyle = '#6B3A1F'; ctx.fillRect(sx, p.y + 10, p.w, 4);
+        ctx.fillStyle = '#8B5A2F'; ctx.fillRect(sx, p.y, p.w, 10);
+        ctx.fillStyle = '#A07040'; ctx.fillRect(sx, p.y, p.w, 3);
+      }
+    }
+
+    // Draw bird
+    const bx = 120, by = runnerBirdY;
+    const wingUp2 = frame % 16 < 8;
+    ctx.fillStyle = '#ffdd00'; ctx.fillRect(bx + 10, by + 5, 18, 16);
+    ctx.fillStyle = '#ffaa00'; ctx.fillRect(bx + 14, by, 10, 10);
+    ctx.fillStyle = '#fff'; ctx.fillRect(bx + 18, by + 2, 4, 4);
+    ctx.fillStyle = '#000'; ctx.fillRect(bx + 19, by + 3, 2, 2);
+    ctx.fillStyle = '#ff6600'; ctx.fillRect(bx + 24, by + 4, 6, 3);
+    ctx.fillStyle = '#eebb00';
+    if (wingUp2) { ctx.fillRect(bx + 3, by + 2, 8, 12); }
+    else { ctx.fillRect(bx + 3, by + 12, 8, 12); }
+
+    // Score + progress
+    ctx.fillStyle = '#333'; ctx.font = 'bold 22px "Courier New"'; ctx.textAlign = 'right';
+    ctx.fillText(runnerScore + ' / 1000', W - 30, 46);
+    // Progress bar
+    const progW = 140, progH = 8, progX = W - 30 - progW, progY = 54;
+    ctx.fillStyle = '#ccc'; ctx.fillRect(progX, progY, progW, progH);
+    ctx.fillStyle = '#44aa44'; ctx.fillRect(progX, progY, progW * Math.min(runnerScore / 1000, 1), progH);
+
+    // Victory overlay
+    if (runnerVictory) {
+      ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 40px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('恭喜通关!', W/2, H/2 - 30);
+      ctx.fillStyle = '#fff'; ctx.font = '20px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('小鸟到达终点!', W/2, H/2 + 14);
+      ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 16px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('点击返回', W/2, H/2 + 46);
+    }
+    // Game over overlay
+    if (runnerGameOver && !runnerVictory) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#ff4444'; ctx.font = 'bold 36px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('Game Over', W/2, H/2 - 20);
+      ctx.fillStyle = '#fff'; ctx.font = '18px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('Score: ' + runnerScore + '  -  Click to retry', W/2, H/2 + 20);
+    }
+    } // end if runnerStarted
+
+    // Back button
+    ctx.fillStyle = '#555'; ctx.fillRect(20, 20, 100, 32);
+    ctx.strokeStyle = '#888'; ctx.lineWidth = 2; ctx.strokeRect(20, 20, 100, 32);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 14px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText(t('btn_back'), 70, 42);
   }
 
   // Lucky Wheel
@@ -3651,6 +4776,40 @@ function draw() {
     ctx.fillStyle = '#40a0ff'; ctx.fillRect(hbx + 3, hby + 3, hbw - 6, hbh - 6);
     ctx.fillStyle = '#fff';
     ctx.fillText(t('btn_home'), hbx + hbw/2, hby + 37);
+
+    // Treasure chest reward
+    const tcY = H/2 + 138;
+    // Treasure chest emoji
+    ctx.fillStyle = treasureClaimed ? '#ffdd00' : '#fff'; ctx.font = '36px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText(treasureClaimed ? '🎉' : '🎁', W/2, tcY + 8);
+    // Click bar background
+    const barX2 = W/2 - 90, barY2 = tcY + 18, barW2 = 180, barH2 = 18;
+    ctx.fillStyle = '#333'; ctx.fillRect(barX2, barY2, barW2, barH2);
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5; ctx.strokeRect(barX2, barY2, barW2, barH2);
+    // Golden fill
+    if (treasureProgress > 0) {
+      const fillGrad = ctx.createLinearGradient(barX2, 0, barX2 + barW2, 0);
+      fillGrad.addColorStop(0, '#d4a017'); fillGrad.addColorStop(0.5, '#ffd700'); fillGrad.addColorStop(1, '#ffcc00');
+      ctx.fillStyle = fillGrad; ctx.fillRect(barX2 + 2, barY2 + 2, (barW2 - 4) * (treasureProgress / 100), barH2 - 4);
+      // Shine
+      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(barX2 + 2, barY2 + 2, (barW2 - 4) * (treasureProgress / 100), barH2 / 3);
+    }
+    // Progress text
+    ctx.fillStyle = '#ccc'; ctx.font = 'bold 10px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText(Math.floor(treasureProgress) + '%', W/2, barY2 + 14);
+    // Golden button
+    const gbW = 130, gbH = 34, gbX = W/2 - gbW/2, gbY = barY2 + barH2 + 8;
+    const gbGrad = ctx.createLinearGradient(0, gbY, 0, gbY + gbH);
+    gbGrad.addColorStop(0, '#ffd700'); gbGrad.addColorStop(0.5, '#ffb800'); gbGrad.addColorStop(1, '#d4a017');
+    ctx.fillStyle = gbGrad; ctx.fillRect(gbX, gbY, gbW, gbH);
+    ctx.fillStyle = '#b8860b'; ctx.fillRect(gbX + 2, gbY + 2, gbW - 4, gbH - 4);
+    ctx.fillStyle = treasureClaimed ? '#888' : '#ffd700'; ctx.font = 'bold 14px "Courier New"'; ctx.textAlign = 'center';
+    ctx.fillText(treasureClaimed ? '已领取 +100 💰' : '点击获奖', W/2, gbY + 23);
+    // Reward hint
+    if (!treasureClaimed) {
+      ctx.fillStyle = '#ffdd00'; ctx.font = '10px "Courier New"'; ctx.textAlign = 'center';
+      ctx.fillText('快速点击填满进度条获得100金币!', W/2, gbY + gbH + 16);
+    }
   }
 
   // Unlock celebration (on top of everything)
@@ -3710,6 +4869,7 @@ function hexToRgba(hex, alpha) {
 
 function gameLoop() {
   try {
+    updateDlgInput();
     if (gameState === 'loading') {
       frame++;
       draw();
@@ -3718,6 +4878,7 @@ function gameLoop() {
       return;
     }
     if (gameState === 'portalSpin') {
+      if (!cameraSoundPlayed) { cameraShutter(); cameraSoundPlayed = true; }
       portalSpinTimer--;
       frame++;
       draw();
@@ -3742,7 +4903,62 @@ function gameLoop() {
       worldLoadingTimer--;
       frame++;
       draw();
-      if (worldLoadingTimer <= 0) { gameState = 'title'; frame = 0; }
+      if (worldLoadingTimer <= 0) { gameState = 'title'; frame = 0; victoryPhoto = null; }
+      requestAnimationFrame(gameLoop);
+      return;
+    }
+    if (gameState === 'runner' && runnerStarted && !runnerGameOver) {
+      // Gravity
+      runnerBirdVY += 0.6;
+      runnerBirdY += runnerBirdVY;
+      // Fall off screen = game over
+      if (runnerBirdY > H + 40) { runnerGameOver = true; }
+      // Ceiling
+      if (runnerBirdY < -20) { runnerBirdY = -20; runnerBirdVY = 0; }
+      // Scroll world
+      runnerScrollX += runnerSpeed;
+      // Remove platforms that scrolled off left
+      for (let pi = runnerPlatforms.length - 1; pi >= 0; pi--) {
+        if (runnerPlatforms[pi].x - runnerScrollX < -100) {
+          runnerPlatforms.splice(pi, 1); runnerScore++;
+        }
+      }
+      // Spawn new platforms ahead
+      let lastPx = 0;
+      for (let pi = 0; pi < runnerPlatforms.length; pi++) {
+        if (runnerPlatforms[pi].x > lastPx) lastPx = runnerPlatforms[pi].x;
+      }
+      while (lastPx - runnerScrollX < W + 200) {
+        lastPx += 60 + Math.random() * 100;
+        const py = 140 + Math.random() * 220;
+        runnerPlatforms.push({ x: lastPx, y: py, w: 50 + Math.random() * 55 });
+      }
+      // Speed up over time
+      runnerSpeed = 4 + runnerScore * 0.12;
+      // Platform collision (landing)
+      const bx2 = 120, by2 = runnerBirdY + 26, bw2 = 34, bh2 = 6;
+      let onPlatform = false;
+      for (let pi = 0; pi < runnerPlatforms.length; pi++) {
+        const p = runnerPlatforms[pi];
+        const sx = p.x - runnerScrollX;
+        if (bx2 + bw2 > sx + 4 && bx2 < sx + p.w - 4) {
+          if (runnerBirdVY >= 0 && by2 >= p.y - 2 && by2 <= p.y + 8) {
+            runnerBirdY = p.y - 26;
+            runnerBirdVY = 0;
+            onPlatform = true;
+          }
+        }
+      }
+      // Victory check
+      if (runnerScore >= 1000 && !runnerVictory) { runnerVictory = true; }
+      frame++;
+      draw();
+      requestAnimationFrame(gameLoop);
+      return;
+    }
+    if (gameState === 'runner' && (!runnerStarted || runnerGameOver || runnerVictory)) {
+      frame++;
+      draw();
       requestAnimationFrame(gameLoop);
       return;
     }
@@ -3809,7 +5025,7 @@ function gameLoop() {
       return;
     }
     if (gameState === 'playing') update();
-    if (gameState === 'title' || gameState === 'select' || gameState === 'shop' || gameState === 'worldSelect' || gameState === 'wheel') frame++;
+    if (gameState === 'title' || gameState === 'select' || gameState === 'shop' || gameState === 'worldSelect' || gameState === 'wheel' || gameState === 'runner') frame++;
     if (unlockCelebration) {
       unlockCelebration.timer--;
       if (unlockCelebration.timer <= 0) unlockCelebration = null;
@@ -3836,6 +5052,10 @@ function gameLoop() {
         gameState = 'playing';
         gameStartFrame = 0; frame = 0;
       }
+    }
+    // Treasure bar drain during game over
+    if (gameState === 'over' && !treasureClaimed && treasureProgress > 0) {
+      treasureProgress = Math.max(0, treasureProgress - 0.25);
     }
     draw();
   } catch (e) {

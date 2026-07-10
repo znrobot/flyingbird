@@ -2143,8 +2143,8 @@ canvas.addEventListener('click', e => {
   if (gameState === 'over') {
     const rbx = W/2 - 170, rby = H/2 + 70, rbw = 150, rbh = 55;
     const hbx = W/2 + 20, hby = H/2 + 70, hbw = 150, hbh = 55;
-    if (mx > rbx && mx < rbx + rbw && my > rby && my < rby + rbh) { if (hintCurrentIdx === 16) { hintComplete('hint_gameover'; hintCurrentIdx = -1; } resetGameKeepSelection(); gameState = 'playing'; return; }
-    if (mx > hbx && mx < hbx + hbw && my > hby && my < hby + hbh) { if (hintCurrentIdx === 16) { hintComplete('hint_gameover'; hintCurrentIdx = -1; } resetGame(); return; }
+    if (mx > rbx && mx < rbx + rbw && my > rby && my < rby + rbh) { if (hintCurrentIdx === 16) { hintComplete('hint_gameover'); hintCurrentIdx = -1; } resetGameKeepSelection(); gameState = 'playing'; return; }
+    if (mx > hbx && mx < hbx + hbw && my > hby && my < hby + hbh) { if (hintCurrentIdx === 16) { hintComplete('hint_gameover'); hintCurrentIdx = -1; } resetGame(); return; }
     // Treasure chest button
     const tcY2 = H/2 + 138, barH3 = 18;
     const barY3 = tcY2 + 18, gbW2 = 130, gbH2 = 34, gbX2 = W/2 - gbW2/2, gbY3 = barY3 + barH3 + 8;
@@ -5260,7 +5260,7 @@ function gameLoop() {
     if (hintCurrentIdx < 0 && gameState !== 'title') checkHintActivation();
     if (gameState === 'select') {
       selectTimer--;
-      if (selectTimer <= 300 && powerUp === null) { powerUp = 'random'; hintClickedDone['hint_powerup'] = true; }
+      if (selectTimer <= 300 && powerUp === null) powerUp = 'random';
       if (selectTimer <= 0) {
         if (powerUp === null || powerUp === 'none' || powerUp === 'random') { const pool = ['superFlight','coinMagnet','doubleTime']; powerUp = pool[Math.floor(Math.random() * pool.length)]; }
         // Track play count for the selected bird
@@ -5279,6 +5279,8 @@ function gameLoop() {
         grayBirdPowerUp = (powerUp === 'selectAll');
         gameState = 'playing';
         gameStartFrame = 0; frame = 0;
+        hintClickedDone['hint_select'] = true;
+        hintClickedDone['hint_powerup'] = true;
         hintFirstJumpDone = true;
       }
     }
